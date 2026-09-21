@@ -1,0 +1,14 @@
+services:
+  db:
+    image: postgis/postgis:16-3.4
+    environment:
+      POSTGRES_USER: aesthetics_user
+      POSTGRES_PASSWORD: aesthetics_pass
+      POSTGRES_DB: aesthetics_db
+    ports:
+      - "5433:5432"
+    volumes:
+      - aesthetics_pg_data:/var/lib/postgresql/data
+
+volumes:
+  aesthetics_pg_data:

@@ -64,6 +64,9 @@ def _prepare_test_database():
 
     async def _create_schema():
         async with test_engine.begin() as conn:
+            # Fresh CREATE DATABASE has no PostGIS; the Geography column on
+            # provider_profiles can't be created without the extension.
+            await conn.execute(text("CREATE EXTENSION IF NOT EXISTS postgis"))
             # drop_all first: create_all only creates MISSING tables, it
             # never alters existing ones. Without this, a test DB left
             # over from before a model change (e.g. a new column) keeps

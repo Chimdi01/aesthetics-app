@@ -8,6 +8,7 @@ import enum
 import uuid
 from datetime import datetime
 
+from geoalchemy2 import Geography
 from sqlalchemy import String, Text, Integer, DateTime, Enum, ForeignKey, func
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 from sqlalchemy.dialects.postgresql import ARRAY, UUID
@@ -21,6 +22,11 @@ class ServiceCategory(str, enum.Enum):
     nails = "nails"
     barber = "barber"
     skincare = "skincare"
+
+
+class AddressType(str, enum.Enum):
+    shop = "shop"
+    home = "home"
 
 
 class ProviderProfile(Base):
@@ -40,6 +46,12 @@ class ProviderProfile(Base):
     categories: Mapped[list[ServiceCategory]] = mapped_column(
         ARRAY(Enum(ServiceCategory, name="servicecategory")), nullable=False
     )
+    # Where customers visit the provider. Both nullable: providers created
+    # before search existed have no location and simply don't appear in
+    # search results until they add one. Geography (not Geometry) so
+    # distances/radii are in real meters on the earth's surface.
+    location: Mapped[str | None] = mapped_column(Geography(geometry_type="POINT", srid=4326), nullable=True)
+    address_type: Mapped[AddressType | None] = mapped_column(Enum(AddressType, name="addresstype"), nullable=True)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
 
     user: Mapped["User"] = relationship(back_populates="provider_profile")

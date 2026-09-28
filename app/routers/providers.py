@@ -9,16 +9,17 @@ shadowed by it.
 import uuid
 
 from fastapi import APIRouter, Depends, File, Form, HTTPException, Query, UploadFile
-from sqlalchemy import select
+from geoalchemy2 import Geography, WKTElement
+from sqlalchemy import cast, func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.database import get_db
 from app.models.portfolio_media import PortfolioMedia
-from app.models.provider_profile import ProviderProfile
+from app.models.provider_profile import ProviderProfile, ServiceCategory
 from app.models.review import Review
 from app.models.user import User
 from app.schemas.portfolio_media import PortfolioMediaPublic
-from app.schemas.provider_profile import ProviderProfileCreate, ProviderProfilePublic
+from app.schemas.provider_profile import ProviderProfileCreate, ProviderProfilePublic, ProviderSearchResult
 from app.schemas.review import ReviewPublic
 from app.security import get_current_provider
 from app.storage import delete_file, save_upload
@@ -63,11 +64,74 @@ async def create_provider_profile(
         bio=payload.bio,
         years_experience=payload.years_experience,
         categories=payload.categories,
+        address_type=payload.address_type,
+        # WKT is "POINT(longitude latitude)" — x is longitude. Both values
+        # are already range-validated floats (see ProviderProfileCreate),
+        # never free text, so nothing user-controlled is spliced in as SQL.
+        location=(
+            WKTElement(f"POINT({payload.longitude} {payload.latitude})", srid=4326)
+            if payload.latitude is not None
+            else None
+        ),
     )
     db.add(profile)
     await db.commit()
     await db.refresh(profile)
     return profile
+
+
+@router.get("/search", response_model=list[ProviderSearchResult])
+async def search_providers(
+    latitude: float = Query(ge=-90, le=90),
+    longitude: float = Query(ge=-180, le=180),
+    radius_km: float = Query(default=10, gt=0, le=50),
+    category: ServiceCategory | None = None,
+    db: AsyncSession = Depends(get_db),
+    limit: int = Query(default=20, ge=1, le=100),
+    offset: int = Query(default=0, ge=0),
+):
+    origin = cast(func.ST_SetSRID(func.ST_MakePoint(longitude, latitude), 4326), Geography)
+
+    ratings = (
+        select(
+            Review.provider_profile_id.label("provider_profile_id"),
+            func.avg(Review.rating).label("average_rating"),
+            func.count(Review.id).label("review_count"),
+        )
+        .group_by(Review.provider_profile_id)
+        .subquery()
+    )
+    distance_m = func.ST_Distance(ProviderProfile.location, origin).label("distance_m")
+
+    stmt = (
+        select(ProviderProfile, distance_m, ratings.c.average_rating, func.coalesce(ratings.c.review_count, 0))
+        .outerjoin(ratings, ratings.c.provider_profile_id == ProviderProfile.id)
+        .where(
+            ProviderProfile.location.is_not(None),
+            func.ST_DWithin(ProviderProfile.location, origin, radius_km * 1000),
+        )
+        # id as a tiebreaker keeps pagination stable when distances tie.
+        .order_by(distance_m, ProviderProfile.id)
+        .limit(limit)
+        .offset(offset)
+    )
+    if category is not None:
+        stmt = stmt.where(ProviderProfile.categories.any(category))
+
+    rows = (await db.execute(stmt)).all()
+    return [
+        ProviderSearchResult(
+            id=profile.id,
+            business_name=profile.business_name,
+            bio=profile.bio,
+            categories=profile.categories,
+            address_type=profile.address_type,
+            distance_km=round(distance / 1000, 1),
+            average_rating=round(float(avg), 2) if avg is not None else None,
+            review_count=count,
+        )
+        for profile, distance, avg, count in rows
+    ]
 
 
 @router.post("/me/portfolio", response_model=PortfolioMediaPublic, status_code=201)

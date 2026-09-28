@@ -10,7 +10,7 @@ from alembic import context
 from app.alembic_support import include_object
 from app.config import settings
 from app.database import Base
-from app.models import user, provider_profile, booking, review, portfolio_media  # noqa: F401  (import so Base knows about the tables)
+from app.models import user, provider_profile, booking, review, portfolio_media, provider_availability  # noqa: F401  (import so Base knows about the tables)
 
 # this is the Alembic Config object, which provides
 # access to the values within the .ini file in use.

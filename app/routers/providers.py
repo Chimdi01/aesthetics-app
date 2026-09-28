@@ -1,7 +1,8 @@
 """
-Static-path routes under /me (portfolio upload/delete, resolved from the
-authenticated user) are registered BEFORE the parameterized /{profile_id}
-routes — same route-registration-order reasoning as app/routers/bookings.py:
+Static-path routes under /me (availability, portfolio upload/delete —
+resolved from the authenticated user) are registered BEFORE the
+parameterized /{profile_id} routes — same route-registration-order
+reasoning as app/routers/bookings.py:
 a dynamic segment like {profile_id} still matches "me" at the string level,
 so a literal route at the same depth must come first to avoid ever being
 shadowed by it.
@@ -10,19 +11,25 @@ import uuid
 
 from fastapi import APIRouter, Depends, File, Form, HTTPException, Query, UploadFile
 from geoalchemy2 import Geography, WKTElement
-from sqlalchemy import cast, func, select
+from sqlalchemy import cast, delete, func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.database import get_db
 from app.models.portfolio_media import PortfolioMedia
+from app.models.provider_availability import DayOfWeek, ProviderAvailability
 from app.models.provider_profile import ProviderProfile, ServiceCategory
 from app.models.review import Review
 from app.models.user import User
 from app.schemas.portfolio_media import PortfolioMediaPublic
+from app.schemas.provider_availability import ProviderAvailabilityPublic, ProviderAvailabilityUpdate
 from app.schemas.provider_profile import ProviderProfileCreate, ProviderProfilePublic, ProviderSearchResult
 from app.schemas.review import ReviewPublic
 from app.security import get_current_provider
 from app.storage import delete_file, save_upload
+
+# Enum declaration order (monday..sunday) doubles as sort order for
+# schedule responses — customers/providers read a week Monday-first.
+_DAY_ORDER = {day: index for index, day in enumerate(DayOfWeek)}
 
 router = APIRouter(prefix="/providers", tags=["providers"])
 
@@ -78,6 +85,36 @@ async def create_provider_profile(
     await db.commit()
     await db.refresh(profile)
     return profile
+
+
+@router.put("/me/availability", response_model=list[ProviderAvailabilityPublic])
+async def set_provider_availability(
+    payload: ProviderAvailabilityUpdate,
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(get_current_provider),
+):
+    profile = await _get_own_provider_profile(db, current_user)
+
+    # Full replace: clear the existing week, then insert the new one.
+    # Simpler and less error-prone than diffing against existing rows for
+    # a "set my working hours" action that's naturally one coherent write.
+    await db.execute(delete(ProviderAvailability).where(ProviderAvailability.provider_profile_id == profile.id))
+
+    rows = [
+        ProviderAvailability(
+            provider_profile_id=profile.id,
+            day_of_week=entry.day_of_week,
+            start_time=entry.start_time,
+            end_time=entry.end_time,
+        )
+        for entry in payload.schedule
+    ]
+    db.add_all(rows)
+    await db.commit()
+    for row in rows:
+        await db.refresh(row)
+
+    return sorted(rows, key=lambda r: (_DAY_ORDER[r.day_of_week], r.start_time))
 
 
 @router.get("/search", response_model=list[ProviderSearchResult])
@@ -225,3 +262,18 @@ async def list_provider_portfolio(
         .offset(offset)
     )
     return [_portfolio_media_to_public(m) for m in result.scalars().all()]
+
+
+@router.get("/{profile_id}/availability", response_model=list[ProviderAvailabilityPublic])
+async def get_provider_availability(profile_id: uuid.UUID, db: AsyncSession = Depends(get_db)):
+    profile = await db.get(ProviderProfile, profile_id)
+    if not profile:
+        raise HTTPException(status_code=404, detail="Provider profile not found")
+
+    # Naturally bounded (at most a handful of shifts per day, 7 days) — no
+    # pagination needed the way the reviews/portfolio listings have it.
+    result = await db.execute(
+        select(ProviderAvailability).where(ProviderAvailability.provider_profile_id == profile_id)
+    )
+    rows = result.scalars().all()
+    return sorted(rows, key=lambda r: (_DAY_ORDER[r.day_of_week], r.start_time))

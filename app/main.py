@@ -12,11 +12,15 @@ import uuid
 
 from fastapi import FastAPI, HTTPException, Request
 from fastapi.staticfiles import StaticFiles
+from slowapi import _rate_limit_exceeded_handler
+from slowapi.errors import RateLimitExceeded
+from slowapi.middleware import SlowAPIMiddleware
 from sqlalchemy import text
 
 from app.config import settings
 from app.database import engine
 from app.logging_config import configure_logging
+from app.rate_limit import limiter
 from app.request_context import request_id_var
 from app.routers import users, providers, auth, bookings
 
@@ -28,6 +32,17 @@ configure_logging(settings.log_level)
 logger = logging.getLogger(__name__)
 
 app = FastAPI(title="Aesthetics App API")
+
+# Rate limiting (see app/rate_limit.py for the limiter itself and its
+# single-instance caveat). app.state.limiter is where slowapi's
+# @limiter.limit(...) decorator (used in routers/auth.py, routers/users.py)
+# looks up the shared limiter instance; the exception handler turns a
+# limit breach into a proper 429 instead of an unhandled error; the
+# middleware applies `default_limits` to every route that doesn't
+# override it with its own @limiter.limit(...).
+app.state.limiter = limiter
+app.add_exception_handler(RateLimitExceeded, _rate_limit_exceeded_handler)
+app.add_middleware(SlowAPIMiddleware)
 
 
 @app.middleware("http")

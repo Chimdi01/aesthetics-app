@@ -6,13 +6,14 @@ what makes /docs's "Authorize" button work out of the box. We treat the
 """
 import logging
 
-from fastapi import APIRouter, Depends, HTTPException, status
+from fastapi import APIRouter, Depends, HTTPException, Request, status
 from fastapi.security import OAuth2PasswordRequestForm
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.database import get_db
 from app.models.user import User
+from app.rate_limit import limiter
 from app.security import create_access_token, verify_password
 
 logger = logging.getLogger(__name__)
@@ -21,8 +22,14 @@ router = APIRouter(prefix="/auth", tags=["auth"])
 
 
 @router.post("/login")
+# Tighter than the 200/minute global default — login is the one endpoint
+# where that default is nowhere near tight enough: credential stuffing
+# means many attempts against the SAME account, often from a rotating
+# set of IPs, but 5/minute per IP still meaningfully slows a single-IP
+# brute force without affecting a real user who mistypes their password.
+@limiter.limit("5/minute")
 async def login(
-    form_data: OAuth2PasswordRequestForm = Depends(), db: AsyncSession = Depends(get_db)
+    request: Request, form_data: OAuth2PasswordRequestForm = Depends(), db: AsyncSession = Depends(get_db)
 ):
     result = await db.execute(select(User).where(User.email == form_data.username))
     user = result.scalar_one_or_none()

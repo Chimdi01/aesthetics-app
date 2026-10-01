@@ -11,12 +11,13 @@ afterward — you never manage that lifecycle by hand.
 import logging
 import uuid
 
-from fastapi import APIRouter, Depends, HTTPException
+from fastapi import APIRouter, Depends, HTTPException, Request
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.database import get_db
 from app.models.user import User
+from app.rate_limit import limiter
 from app.schemas.user import UserCreate, UserPublic
 from app.security import hash_password
 
@@ -26,7 +27,11 @@ router = APIRouter(prefix="/users", tags=["users"])
 
 
 @router.post("/", response_model=UserPublic, status_code=201)
-async def create_user(payload: UserCreate, db: AsyncSession = Depends(get_db)):
+# Tighter than the 200/minute global default — a signup endpoint with no
+# throttle is an easy way to mass-create accounts (spam, fraud, scraping
+# the "email already registered" signal to enumerate real users).
+@limiter.limit("10/hour")
+async def create_user(request: Request, payload: UserCreate, db: AsyncSession = Depends(get_db)):
     existing = await db.execute(select(User).where(User.email == payload.email))
     if existing.scalar_one_or_none():
         logger.info("Signup rejected, email already registered: %s", payload.email)

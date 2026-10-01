@@ -13,9 +13,9 @@ import logging
 import uuid
 from datetime import datetime, timedelta, timezone
 
+import jwt
 from fastapi import Depends, HTTPException, status
 from fastapi.security import OAuth2PasswordBearer
-from jose import JWTError, jwt
 from passlib.context import CryptContext
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -61,9 +61,9 @@ async def get_current_user(
         if user_id is None:
             logger.warning("Rejected token with no 'sub' claim")
             raise credentials_error
-    except JWTError as exc:
-        # str(exc) is a short, fixed message from python-jose (e.g.
-        # "Signature has expired") — never the token itself.
+    except jwt.PyJWTError as exc:
+        # str(exc) is a short, fixed message from PyJWT (e.g. "Signature
+        # has expired") — never the token itself.
         logger.warning("Rejected invalid/expired token: %s", exc)
         raise credentials_error
 

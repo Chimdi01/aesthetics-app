@@ -97,6 +97,18 @@ async def _clean_tables():
     yield
 
 
+@pytest_asyncio.fixture(autouse=True)
+async def _reset_rate_limiter():
+    """Without this, slowapi's in-memory counters (shared by the one
+    `app` instance imported once for the whole test session, not
+    recreated per-test) would carry over between tests — e.g. the
+    5/minute login limit would start rejecting logins partway through the
+    suite, not because of anything a given test did, but because of what
+    every prior test already did."""
+    app.state.limiter.reset()
+    yield
+
+
 async def _override_get_db():
     async with TestSessionLocal() as session:
         yield session

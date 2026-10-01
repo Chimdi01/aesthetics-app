@@ -4,8 +4,8 @@ get_current_user/get_current_provider directly since those need a live
 request + DB session; that behavior is covered by the regression tests
 in tests/regression/test_providers.py instead.
 """
+import jwt
 import pytest
-from jose import JWTError, jwt
 
 from app.config import settings
 from app.security import create_access_token, hash_password, verify_password
@@ -45,5 +45,5 @@ def test_create_access_token_contains_correct_subject_and_expiry():
 
 def test_decoding_token_with_wrong_secret_fails():
     token = create_access_token("3fa85f64-5717-4562-b3fc-2c963f66afa6")
-    with pytest.raises(JWTError):
+    with pytest.raises(jwt.PyJWTError):
         jwt.decode(token, "not-the-real-secret", algorithms=[settings.jwt_algorithm])

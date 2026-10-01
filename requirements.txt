@@ -1,4 +1,11 @@
-fastapi==0.115.0
+fastapi==0.134.0
+# fastapi's own transitive deps, pinned explicitly (same reasoning as
+# greenlet below): starlette is the actual CVE-bearing package underneath
+# fastapi, pinned to a version with none of the vulnerabilities found in
+# the previously-pinned 0.38.6 (see CLAUDE.md's dependency-CVE gotcha).
+starlette==1.7.0
+annotated-doc==0.0.5
+typing-inspection==0.4.4
 uvicorn[standard]==0.30.6
 sqlalchemy==2.0.35
 asyncpg==0.29.0
@@ -8,8 +15,13 @@ pydantic[email]==2.9.2
 pydantic-settings==2.5.2
 passlib[bcrypt]==1.7.4
 bcrypt==3.2.2
-python-jose[cryptography]==3.3.0
-python-multipart==0.0.9
-python-dotenv==1.0.1
+# PyJWT, not python-jose: python-jose 3.3.0 has an unfixed CVE
+# (PYSEC-2025-185) and hard-depends on ecdsa, which has its own unfixed
+# CVE — see CLAUDE.md for why this was swapped rather than just re-pinned.
+pyjwt==2.15.1
+python-multipart==0.0.32
+python-dotenv==1.2.4
 alembic==1.20.0
 geoalchemy2==0.15.2
+slowapi==0.1.10
+limits==5.8.0

@@ -10,7 +10,7 @@ import enum
 import uuid
 from datetime import datetime
 
-from sqlalchemy import DateTime, Enum, ForeignKey, String, func
+from sqlalchemy import DateTime, Enum, ForeignKey, Index, String, func
 from sqlalchemy.orm import Mapped, mapped_column
 from sqlalchemy.dialects.postgresql import UUID
 
@@ -24,6 +24,11 @@ class MediaType(str, enum.Enum):
 
 class PortfolioMedia(Base):
     __tablename__ = "portfolio_media"
+    __table_args__ = (
+        # GET /providers/{id}/portfolio filters on provider_profile_id and
+        # sorts by created_at — one composite index for both.
+        Index("ix_portfolio_media_provider_profile_id_created_at", "provider_profile_id", "created_at"),
+    )
 
     id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
     provider_profile_id: Mapped[uuid.UUID] = mapped_column(

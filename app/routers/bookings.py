@@ -12,16 +12,18 @@ registered before the parameterized /{booking_id} routes to avoid that.
 import uuid
 from datetime import datetime, timezone
 
-from fastapi import APIRouter, Depends, HTTPException
+from fastapi import APIRouter, Depends, HTTPException, Query
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.database import get_db
 from app.models.booking import Booking, BookingStatus
+from app.models.message import Message
 from app.models.provider_profile import ProviderProfile
 from app.models.review import Review
 from app.models.user import User
 from app.schemas.booking import BookingCreate, BookingPublic, BookingStatusUpdate
+from app.schemas.message import MessageCreate, MessagePublic
 from app.schemas.review import ReviewCreate, ReviewPublic
 from app.security import get_current_provider, get_current_user
 
@@ -31,6 +33,18 @@ router = APIRouter(prefix="/bookings", tags=["bookings"])
 async def _get_owning_provider_profile(db: AsyncSession, booking: Booking) -> ProviderProfile:
     result = await db.execute(select(ProviderProfile).where(ProviderProfile.id == booking.provider_profile_id))
     return result.scalar_one()
+
+
+async def _authorize_booking_party(db: AsyncSession, booking: Booking, current_user: User) -> tuple[bool, bool]:
+    """Returns (is_customer, is_provider) for this booking; raises 403 if
+    current_user is neither. Centralizes a check repeated across every
+    booking sub-resource (status updates, messages)."""
+    provider_profile = await _get_owning_provider_profile(db, booking)
+    is_customer = booking.customer_id == current_user.id
+    is_provider = provider_profile.user_id == current_user.id
+    if not is_customer and not is_provider:
+        raise HTTPException(status_code=403, detail="Not your booking")
+    return is_customer, is_provider
 
 
 @router.post("/", response_model=BookingPublic, status_code=201)
@@ -102,11 +116,7 @@ async def get_booking(
     if not booking:
         raise HTTPException(status_code=404, detail="Booking not found")
 
-    provider_profile = await _get_owning_provider_profile(db, booking)
-    is_customer = booking.customer_id == current_user.id
-    is_provider = provider_profile.user_id == current_user.id
-    if not is_customer and not is_provider:
-        raise HTTPException(status_code=403, detail="Not your booking")
+    await _authorize_booking_party(db, booking, current_user)
 
     return booking
 
@@ -122,11 +132,7 @@ async def update_booking_status(
     if not booking:
         raise HTTPException(status_code=404, detail="Booking not found")
 
-    provider_profile = await _get_owning_provider_profile(db, booking)
-    is_customer = booking.customer_id == current_user.id
-    is_provider = provider_profile.user_id == current_user.id
-    if not is_customer and not is_provider:
-        raise HTTPException(status_code=403, detail="Not your booking")
+    is_customer, is_provider = await _authorize_booking_party(db, booking, current_user)
 
     if booking.status in (BookingStatus.completed, BookingStatus.cancelled):
         raise HTTPException(
@@ -187,3 +193,51 @@ async def create_review(
     await db.commit()
     await db.refresh(review)
     return review
+
+
+@router.post("/{booking_id}/messages", response_model=MessagePublic, status_code=201)
+async def send_message(
+    booking_id: uuid.UUID,
+    payload: MessageCreate,
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    booking = await db.get(Booking, booking_id)
+    if not booking:
+        raise HTTPException(status_code=404, detail="Booking not found")
+
+    await _authorize_booking_party(db, booking, current_user)
+
+    message = Message(booking_id=booking.id, sender_id=current_user.id, body=payload.body)
+    db.add(message)
+    await db.commit()
+    await db.refresh(message)
+    return message
+
+
+@router.get("/{booking_id}/messages", response_model=list[MessagePublic])
+async def list_messages(
+    booking_id: uuid.UUID,
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+    limit: int = Query(default=50, ge=1, le=200),
+    offset: int = Query(default=0, ge=0),
+):
+    booking = await db.get(Booking, booking_id)
+    if not booking:
+        raise HTTPException(status_code=404, detail="Booking not found")
+
+    await _authorize_booking_party(db, booking, current_user)
+
+    # Oldest-first (natural conversation order). offset/limit pagination
+    # is consistent with the rest of the codebase (reviews, portfolio) —
+    # a cursor-based ("messages before X") approach would suit a
+    # high-volume chat better, but isn't warranted at this message volume.
+    result = await db.execute(
+        select(Message)
+        .where(Message.booking_id == booking_id)
+        .order_by(Message.created_at, Message.id)
+        .limit(limit)
+        .offset(offset)
+    )
+    return result.scalars().all()

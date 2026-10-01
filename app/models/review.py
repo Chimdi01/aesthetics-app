@@ -11,7 +11,7 @@ denormalize-for-cheap-reads tradeoff already made for Booking.category.
 import uuid
 from datetime import datetime
 
-from sqlalchemy import CheckConstraint, DateTime, ForeignKey, Integer, String, func
+from sqlalchemy import CheckConstraint, DateTime, ForeignKey, Index, Integer, String, func
 from sqlalchemy.orm import Mapped, mapped_column
 from sqlalchemy.dialects.postgresql import UUID
 
@@ -20,7 +20,12 @@ from app.database import Base
 
 class Review(Base):
     __tablename__ = "reviews"
-    __table_args__ = (CheckConstraint("rating >= 1 AND rating <= 5", name="rating_range"),)
+    __table_args__ = (
+        CheckConstraint("rating >= 1 AND rating <= 5", name="rating_range"),
+        # Serves both GET /providers/{id}/reviews (filter + sort by
+        # created_at) and the ratings-aggregate subquery in provider search.
+        Index("ix_reviews_provider_profile_id_created_at", "provider_profile_id", "created_at"),
+    )
 
     id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
     booking_id: Mapped[uuid.UUID] = mapped_column(

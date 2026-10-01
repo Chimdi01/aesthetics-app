@@ -11,7 +11,7 @@ import uuid
 from datetime import datetime
 from decimal import Decimal
 
-from sqlalchemy import DateTime, Enum, ForeignKey, Numeric, String, func
+from sqlalchemy import DateTime, Enum, ForeignKey, Index, Numeric, String, func
 from sqlalchemy.orm import Mapped, mapped_column
 from sqlalchemy.dialects.postgresql import UUID
 
@@ -33,6 +33,13 @@ class BookingStatus(str, enum.Enum):
 
 class Booking(Base):
     __tablename__ = "bookings"
+    __table_args__ = (
+        # Every "my bookings" listing filters on one of these and sorts by
+        # scheduled_at — composite indexes keep that an index scan
+        # regardless of total platform-wide booking volume.
+        Index("ix_bookings_customer_id_scheduled_at", "customer_id", "scheduled_at"),
+        Index("ix_bookings_provider_profile_id_scheduled_at", "provider_profile_id", "scheduled_at"),
+    )
 
     id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
     customer_id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), ForeignKey("users.id"), nullable=False)

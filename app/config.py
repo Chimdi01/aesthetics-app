@@ -23,6 +23,16 @@ class Settings(BaseSettings):
     media_root: str = "media"
     max_upload_size_bytes: int = 25 * 1024 * 1024  # 25 MB
 
+    # DB connection pool, per app process/instance. These are conservative
+    # dev-appropriate defaults, NOT a scale setting to crank up — the real
+    # constraint is (number of app instances x db_pool_size) staying under
+    # Postgres's max_connections (default 100). At enough concurrent app
+    # instances that this math gets tight, the fix is a connection pooler
+    # (e.g. PgBouncer) in front of Postgres, not a bigger pool_size here.
+    db_pool_size: int = 5
+    db_max_overflow: int = 10
+    db_pool_timeout: int = 30
+
     class Config:
         env_file = ".env"
 

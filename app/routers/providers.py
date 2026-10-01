@@ -7,6 +7,7 @@ a dynamic segment like {profile_id} still matches "me" at the string level,
 so a literal route at the same depth must come first to avoid ever being
 shadowed by it.
 """
+import logging
 import uuid
 
 from fastapi import APIRouter, Depends, File, Form, HTTPException, Query, UploadFile
@@ -30,6 +31,8 @@ from app.storage import delete_file, save_upload
 # Enum declaration order (monday..sunday) doubles as sort order for
 # schedule responses — customers/providers read a week Monday-first.
 _DAY_ORDER = {day: index for index, day in enumerate(DayOfWeek)}
+
+logger = logging.getLogger(__name__)
 
 router = APIRouter(prefix="/providers", tags=["providers"])
 
@@ -84,6 +87,7 @@ async def create_provider_profile(
     db.add(profile)
     await db.commit()
     await db.refresh(profile)
+    logger.info("Provider profile created: %s (user=%s, categories=%s)", profile.id, current_user.id, [c.value for c in profile.categories])
     return profile
 
 
@@ -114,6 +118,7 @@ async def set_provider_availability(
     for row in rows:
         await db.refresh(row)
 
+    logger.info("Availability updated for provider %s: %d shift(s)", profile.id, len(rows))
     return sorted(rows, key=lambda r: (_DAY_ORDER[r.day_of_week], r.start_time))
 
 
@@ -156,6 +161,12 @@ async def search_providers(
         stmt = stmt.where(ProviderProfile.categories.any(category))
 
     rows = (await db.execute(stmt)).all()
+    # Exact search origin isn't logged above DEBUG — for a home provider
+    # (or a customer searching from home) that coordinate is effectively a
+    # home address, so it gets the same "don't log it above DEBUG"
+    # treatment as any other location data in this codebase.
+    logger.debug("Search origin=(%s, %s) radius_km=%s category=%s", latitude, longitude, radius_km, category)
+    logger.info("Provider search returned %d result(s) within %skm", len(rows), radius_km)
     return [
         ProviderSearchResult(
             id=profile.id,
@@ -191,6 +202,7 @@ async def upload_portfolio_media(
     db.add(media)
     await db.commit()
     await db.refresh(media)
+    logger.info("Portfolio media uploaded: %s (provider=%s, type=%s)", media.id, profile.id, media_type.value)
     return _portfolio_media_to_public(media)
 
 
@@ -209,6 +221,7 @@ async def delete_portfolio_media(
     await db.delete(media)
     await db.commit()
     delete_file(media.file_path)
+    logger.info("Portfolio media deleted: %s (provider=%s)", media_id, profile.id)
 
 
 @router.get("/{profile_id}", response_model=ProviderProfilePublic)

@@ -33,6 +33,11 @@ class Settings(BaseSettings):
     db_max_overflow: int = 10
     db_pool_timeout: int = 30
 
+    # DEBUG locally when chasing something specific; INFO is the normal
+    # run level (see app/logging_config.py for what each level is used for
+    # across the app).
+    log_level: str = "INFO"
+
     class Config:
         env_file = ".env"
 

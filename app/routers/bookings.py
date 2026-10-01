@@ -9,6 +9,7 @@ first if that route were registered above it, fail UUID conversion on
 handler below. Static-path routes (/as-customer, /as-provider) are
 registered before the parameterized /{booking_id} routes to avoid that.
 """
+import logging
 import uuid
 from datetime import datetime, timezone
 
@@ -27,6 +28,8 @@ from app.schemas.message import MessageCreate, MessagePublic
 from app.schemas.review import ReviewCreate, ReviewPublic
 from app.security import get_current_provider, get_current_user
 
+logger = logging.getLogger(__name__)
+
 router = APIRouter(prefix="/bookings", tags=["bookings"])
 
 
@@ -43,6 +46,7 @@ async def _authorize_booking_party(db: AsyncSession, booking: Booking, current_u
     is_customer = booking.customer_id == current_user.id
     is_provider = provider_profile.user_id == current_user.id
     if not is_customer and not is_provider:
+        logger.warning("User %s denied access to booking %s (not a party to it)", current_user.id, booking.id)
         raise HTTPException(status_code=403, detail="Not your booking")
     return is_customer, is_provider
 
@@ -78,6 +82,10 @@ async def create_booking(
     db.add(booking)
     await db.commit()
     await db.refresh(booking)
+    logger.info(
+        "Booking created: %s (customer=%s, provider_profile=%s, category=%s, visit_type=%s)",
+        booking.id, booking.customer_id, booking.provider_profile_id, booking.category.value, booking.visit_type.value,
+    )
     return booking
 
 
@@ -155,9 +163,14 @@ async def update_booking_status(
     else:
         raise HTTPException(status_code=400, detail="Invalid status transition")
 
+    previous_status = booking.status
     booking.status = new_status
     await db.commit()
     await db.refresh(booking)
+    logger.info(
+        "Booking %s status changed: %s -> %s (by user=%s)",
+        booking.id, previous_status.value, new_status.value, current_user.id,
+    )
     return booking
 
 
@@ -173,6 +186,7 @@ async def create_review(
         raise HTTPException(status_code=404, detail="Booking not found")
 
     if booking.customer_id != current_user.id:
+        logger.warning("User %s denied review access to booking %s (not the customer)", current_user.id, booking.id)
         raise HTTPException(status_code=403, detail="Only the customer on this booking can leave a review")
 
     if booking.status != BookingStatus.completed:
@@ -192,6 +206,7 @@ async def create_review(
     db.add(review)
     await db.commit()
     await db.refresh(review)
+    logger.info("Review created: %s (booking=%s, rating=%d)", review.id, booking.id, review.rating)
     return review
 
 
@@ -212,6 +227,9 @@ async def send_message(
     db.add(message)
     await db.commit()
     await db.refresh(message)
+    # DEBUG, and metadata only — message content is user-generated
+    # conversation text and never belongs in logs at any level, even DEBUG.
+    logger.debug("Message sent: %s (booking=%s, sender=%s)", message.id, booking.id, current_user.id)
     return message
 
 

@@ -18,6 +18,7 @@ Security notes:
   trusting the Content-Length header, which a client can omit or lie
   about.
 """
+import logging
 import uuid
 from pathlib import Path
 
@@ -25,6 +26,8 @@ from fastapi import HTTPException, UploadFile
 
 from app.config import settings
 from app.models.portfolio_media import MediaType
+
+logger = logging.getLogger(__name__)
 
 ALLOWED_CONTENT_TYPES: dict[str, tuple[MediaType, str]] = {
     "image/jpeg": (MediaType.photo, ".jpg"),
@@ -42,6 +45,10 @@ _CHUNK_SIZE = 1024 * 1024
 async def save_upload(file: UploadFile, provider_profile_id: uuid.UUID) -> tuple[str, MediaType]:
     """Validates and streams `file` to local disk. Returns (relative_path, media_type)."""
     if file.content_type not in ALLOWED_CONTENT_TYPES:
+        # WARNING, not INFO: a legitimate client never sends a disallowed
+        # type (the frontend only offers valid pickers) — a volume of
+        # these is a signal worth noticing, not routine traffic.
+        logger.warning("Rejected upload for provider %s: disallowed content-type '%s'", provider_profile_id, file.content_type)
         raise HTTPException(
             status_code=400,
             detail=f"Unsupported file type '{file.content_type}'. Allowed: {sorted(ALLOWED_CONTENT_TYPES)}",
@@ -58,6 +65,11 @@ async def save_upload(file: UploadFile, provider_profile_id: uuid.UUID) -> tuple
             while chunk := await file.read(_CHUNK_SIZE):
                 bytes_written += len(chunk)
                 if bytes_written > settings.max_upload_size_bytes:
+                    logger.warning(
+                        "Rejected upload for provider %s: exceeded %d byte limit",
+                        provider_profile_id,
+                        settings.max_upload_size_bytes,
+                    )
                     raise HTTPException(status_code=413, detail="File exceeds maximum upload size")
                 out_file.write(chunk)
     except HTTPException:
@@ -66,9 +78,12 @@ async def save_upload(file: UploadFile, provider_profile_id: uuid.UUID) -> tuple
 
     if bytes_written == 0:
         destination_path.unlink(missing_ok=True)
+        logger.warning("Rejected upload for provider %s: empty file", provider_profile_id)
         raise HTTPException(status_code=400, detail="Uploaded file is empty")
 
-    return f"{provider_profile_id}/{destination_path.name}", media_type
+    relative_path = f"{provider_profile_id}/{destination_path.name}"
+    logger.debug("Saved upload %s (%d bytes)", relative_path, bytes_written)
+    return relative_path, media_type
 
 
 def delete_file(relative_path: str) -> None:
@@ -78,5 +93,7 @@ def delete_file(relative_path: str) -> None:
     media_root = Path(settings.media_root).resolve()
     target = (media_root / relative_path).resolve()
     if media_root not in target.parents:
+        logger.error("Refused to delete path outside media_root: %s", relative_path)
         return
     target.unlink(missing_ok=True)
+    logger.debug("Deleted file %s", relative_path)

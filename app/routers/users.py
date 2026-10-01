@@ -8,6 +8,7 @@ The actual HTTP endpoints. Notice the pattern in every function:
 it runs get_db(), hands the route function the session, and closes it
 afterward — you never manage that lifecycle by hand.
 """
+import logging
 import uuid
 
 from fastapi import APIRouter, Depends, HTTPException
@@ -19,6 +20,8 @@ from app.models.user import User
 from app.schemas.user import UserCreate, UserPublic
 from app.security import hash_password
 
+logger = logging.getLogger(__name__)
+
 router = APIRouter(prefix="/users", tags=["users"])
 
 
@@ -26,6 +29,7 @@ router = APIRouter(prefix="/users", tags=["users"])
 async def create_user(payload: UserCreate, db: AsyncSession = Depends(get_db)):
     existing = await db.execute(select(User).where(User.email == payload.email))
     if existing.scalar_one_or_none():
+        logger.info("Signup rejected, email already registered: %s", payload.email)
         raise HTTPException(status_code=409, detail="Email already registered")
 
     user = User(
@@ -37,6 +41,7 @@ async def create_user(payload: UserCreate, db: AsyncSession = Depends(get_db)):
     db.add(user)
     await db.commit()
     await db.refresh(user)
+    logger.info("User created: %s (role=%s)", user.id, user.role.value)
     return user
 
 

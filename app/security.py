@@ -3,7 +3,13 @@ Everything related to "who is this request from" lives here: password
 hashing (shared by user creation and login), JWT creation/verification,
 and the `get_current_user` dependency that protected routes use to pull
 the authenticated user out of the request.
+
+Logging rule for this whole file: never log a password, a raw JWT, or an
+Authorization header value — only ever a user id (and only once it's
+already been validated as a real UUID from a decoded token, never the
+raw token string itself).
 """
+import logging
 import uuid
 from datetime import datetime, timedelta, timezone
 
@@ -16,6 +22,8 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.config import settings
 from app.database import get_db
 from app.models.user import User, UserRole
+
+logger = logging.getLogger(__name__)
 
 pwd_context = CryptContext(schemes=["bcrypt"], deprecated="auto")
 
@@ -51,13 +59,19 @@ async def get_current_user(
         payload = jwt.decode(token, settings.jwt_secret_key, algorithms=[settings.jwt_algorithm])
         user_id = payload.get("sub")
         if user_id is None:
+            logger.warning("Rejected token with no 'sub' claim")
             raise credentials_error
-    except JWTError:
+    except JWTError as exc:
+        # str(exc) is a short, fixed message from python-jose (e.g.
+        # "Signature has expired") — never the token itself.
+        logger.warning("Rejected invalid/expired token: %s", exc)
         raise credentials_error
 
     user = await db.get(User, uuid.UUID(user_id))
     if user is None:
+        logger.warning("Token valid but no matching user: %s", user_id)
         raise credentials_error
+    logger.debug("Authenticated user %s", user.id)
     return user
 
 
@@ -67,5 +81,6 @@ async def get_current_provider(current_user: User = Depends(get_current_user)) -
     that needs 'must be logged in AND be a provider' just depends on
     this instead of re-checking the role itself."""
     if current_user.role != UserRole.provider:
+        logger.warning("User %s (role=%s) attempted a provider-only action", current_user.id, current_user.role.value)
         raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Providers only")
     return current_user

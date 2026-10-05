@@ -1,59 +1,38 @@
 """
-Static-path routes under /me (availability, portfolio upload/delete —
-resolved from the authenticated user) are registered BEFORE the
-parameterized /{profile_id} routes — same route-registration-order
-reasoning as app/routers/bookings.py:
-a dynamic segment like {profile_id} still matches "me" at the string level,
-so a literal route at the same depth must come first to avoid ever being
-shadowed by it.
+GET /search is registered BEFORE GET /{profile_id} — same reasoning as
+the route-ordering gotcha documented in app/routers/bookings.py:
+"/providers/search" and "/providers/{profile_id}" are both GET requests
+at the same path depth, and {profile_id} (typed uuid.UUID) still matches
+"search" at the STRING level first if registered earlier — the UUID
+conversion only happens after a route has already matched, so a
+mis-ordered /{profile_id} would intercept a search request and fail UUID
+parsing with a 422 instead of ever reaching the real search handler.
+
+Provider-owned sub-resources used to live in this file too — they've
+moved to their own router modules (app/routers/provider_availability.py,
+app/routers/portfolio.py, app/routers/reviews.py) once this file started
+covering profile CRUD, search, availability, AND portfolio all at once.
+This file is just the ProviderProfile resource itself now: create, fetch,
+search.
 """
 import logging
 import uuid
 
-from fastapi import APIRouter, Depends, File, Form, HTTPException, Query, UploadFile
+from fastapi import APIRouter, Depends, HTTPException, Query
 from geoalchemy2 import Geography, WKTElement
-from sqlalchemy import cast, delete, func, select
+from sqlalchemy import cast, func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.database import get_db
-from app.models.portfolio_media import PortfolioMedia
-from app.models.provider_availability import DayOfWeek, ProviderAvailability
 from app.models.provider_profile import ProviderProfile, ServiceCategory
 from app.models.review import Review
 from app.models.user import User
-from app.schemas.portfolio_media import PortfolioMediaPublic
-from app.schemas.provider_availability import ProviderAvailabilityPublic, ProviderAvailabilityUpdate
 from app.schemas.provider_profile import ProviderProfileCreate, ProviderProfilePublic, ProviderSearchResult
-from app.schemas.review import ReviewPublic
 from app.security import get_current_provider
-from app.storage import delete_file, save_upload
-
-# Enum declaration order (monday..sunday) doubles as sort order for
-# schedule responses — customers/providers read a week Monday-first.
-_DAY_ORDER = {day: index for index, day in enumerate(DayOfWeek)}
 
 logger = logging.getLogger(__name__)
 
 router = APIRouter(prefix="/providers", tags=["providers"])
-
-
-def _portfolio_media_to_public(media: PortfolioMedia) -> PortfolioMediaPublic:
-    return PortfolioMediaPublic(
-        id=media.id,
-        provider_profile_id=media.provider_profile_id,
-        media_type=media.media_type,
-        url=f"/media/{media.file_path}",
-        caption=media.caption,
-        created_at=media.created_at,
-    )
-
-
-async def _get_own_provider_profile(db: AsyncSession, current_user: User) -> ProviderProfile:
-    result = await db.execute(select(ProviderProfile).where(ProviderProfile.user_id == current_user.id))
-    profile = result.scalar_one_or_none()
-    if not profile:
-        raise HTTPException(status_code=404, detail="You don't have a provider profile yet")
-    return profile
 
 
 @router.post("/", response_model=ProviderProfilePublic, status_code=201)
@@ -89,37 +68,6 @@ async def create_provider_profile(
     await db.refresh(profile)
     logger.info("Provider profile created: %s (user=%s, categories=%s)", profile.id, current_user.id, [c.value for c in profile.categories])
     return profile
-
-
-@router.put("/me/availability", response_model=list[ProviderAvailabilityPublic])
-async def set_provider_availability(
-    payload: ProviderAvailabilityUpdate,
-    db: AsyncSession = Depends(get_db),
-    current_user: User = Depends(get_current_provider),
-):
-    profile = await _get_own_provider_profile(db, current_user)
-
-    # Full replace: clear the existing week, then insert the new one.
-    # Simpler and less error-prone than diffing against existing rows for
-    # a "set my working hours" action that's naturally one coherent write.
-    await db.execute(delete(ProviderAvailability).where(ProviderAvailability.provider_profile_id == profile.id))
-
-    rows = [
-        ProviderAvailability(
-            provider_profile_id=profile.id,
-            day_of_week=entry.day_of_week,
-            start_time=entry.start_time,
-            end_time=entry.end_time,
-        )
-        for entry in payload.schedule
-    ]
-    db.add_all(rows)
-    await db.commit()
-    for row in rows:
-        await db.refresh(row)
-
-    logger.info("Availability updated for provider %s: %d shift(s)", profile.id, len(rows))
-    return sorted(rows, key=lambda r: (_DAY_ORDER[r.day_of_week], r.start_time))
 
 
 @router.get("/search", response_model=list[ProviderSearchResult])
@@ -182,111 +130,9 @@ async def search_providers(
     ]
 
 
-@router.post("/me/portfolio", response_model=PortfolioMediaPublic, status_code=201)
-async def upload_portfolio_media(
-    file: UploadFile = File(...),
-    caption: str | None = Form(default=None, max_length=255),
-    db: AsyncSession = Depends(get_db),
-    current_user: User = Depends(get_current_provider),
-):
-    profile = await _get_own_provider_profile(db, current_user)
-
-    relative_path, media_type = await save_upload(file, profile.id)
-
-    media = PortfolioMedia(
-        provider_profile_id=profile.id,
-        media_type=media_type,
-        file_path=relative_path,
-        caption=caption,
-    )
-    db.add(media)
-    await db.commit()
-    await db.refresh(media)
-    logger.info("Portfolio media uploaded: %s (provider=%s, type=%s)", media.id, profile.id, media_type.value)
-    return _portfolio_media_to_public(media)
-
-
-@router.delete("/me/portfolio/{media_id}", status_code=204)
-async def delete_portfolio_media(
-    media_id: uuid.UUID,
-    db: AsyncSession = Depends(get_db),
-    current_user: User = Depends(get_current_provider),
-):
-    profile = await _get_own_provider_profile(db, current_user)
-
-    media = await db.get(PortfolioMedia, media_id)
-    if not media or media.provider_profile_id != profile.id:
-        raise HTTPException(status_code=404, detail="Portfolio media not found")
-
-    await db.delete(media)
-    await db.commit()
-    delete_file(media.file_path)
-    logger.info("Portfolio media deleted: %s (provider=%s)", media_id, profile.id)
-
-
 @router.get("/{profile_id}", response_model=ProviderProfilePublic)
 async def get_provider_profile(profile_id: uuid.UUID, db: AsyncSession = Depends(get_db)):
     profile = await db.get(ProviderProfile, profile_id)
     if not profile:
         raise HTTPException(status_code=404, detail="Provider profile not found")
     return profile
-
-
-@router.get("/{profile_id}/reviews", response_model=list[ReviewPublic])
-async def list_provider_reviews(
-    profile_id: uuid.UUID,
-    db: AsyncSession = Depends(get_db),
-    # Bounded default + hard cap: an unbounded SELECT here would let a
-    # provider with a large review history turn every page load into an
-    # ever-growing query — cap it rather than trusting callers to paginate.
-    limit: int = Query(default=20, ge=1, le=100),
-    offset: int = Query(default=0, ge=0),
-):
-    profile = await db.get(ProviderProfile, profile_id)
-    if not profile:
-        raise HTTPException(status_code=404, detail="Provider profile not found")
-
-    result = await db.execute(
-        select(Review)
-        .where(Review.provider_profile_id == profile_id)
-        .order_by(Review.created_at.desc())
-        .limit(limit)
-        .offset(offset)
-    )
-    return result.scalars().all()
-
-
-@router.get("/{profile_id}/portfolio", response_model=list[PortfolioMediaPublic])
-async def list_provider_portfolio(
-    profile_id: uuid.UUID,
-    db: AsyncSession = Depends(get_db),
-    limit: int = Query(default=20, ge=1, le=100),
-    offset: int = Query(default=0, ge=0),
-):
-    profile = await db.get(ProviderProfile, profile_id)
-    if not profile:
-        raise HTTPException(status_code=404, detail="Provider profile not found")
-
-    result = await db.execute(
-        select(PortfolioMedia)
-        .where(PortfolioMedia.provider_profile_id == profile_id)
-        .order_by(PortfolioMedia.created_at.desc())
-        .limit(limit)
-        .offset(offset)
-    )
-    return [_portfolio_media_to_public(m) for m in result.scalars().all()]
-
-
-@router.get("/{profile_id}/availability", response_model=list[ProviderAvailabilityPublic])
-async def get_provider_availability(profile_id: uuid.UUID, db: AsyncSession = Depends(get_db)):
-    profile = await db.get(ProviderProfile, profile_id)
-    if not profile:
-        raise HTTPException(status_code=404, detail="Provider profile not found")
-
-    # Naturally bounded (at most a handful of shifts per day, 7 days) — no
-    # pagination needed the way the reviews/portfolio listings have it.
-    result = await db.execute(
-        select(ProviderAvailability).where(ProviderAvailability.provider_profile_id == profile_id)
-    )
-    rows = result.scalars().all()
-    return sorted(rows, key=lambda r: (_DAY_ORDER[r.day_of_week], r.start_time))

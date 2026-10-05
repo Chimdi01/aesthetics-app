@@ -1,0 +1,77 @@
+# Runs on every push/PR so "152 tests pass" is a guarantee checked on
+# every change, not just a claim from whenever someone last ran them
+# locally. Two independent jobs: `test` (migrations apply cleanly, then
+# the full unit+regression suite against a real Postgres+PostGIS service
+# container — the same image docker-compose.yml uses locally) and
+# `dependency-audit` (checks the exact pinned versions in requirements.txt
+# against known CVEs). They're separate jobs, not steps in one job, so a
+# new CVE disclosure on an existing pinned dependency shows up as its own
+# failing check rather than being buried inside (or blocking) the test run.
+name: CI
+
+on:
+  push:
+    branches: ["**"]
+  pull_request:
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+
+    services:
+      postgres:
+        image: postgis/postgis:16-3.4
+        env:
+          POSTGRES_USER: aesthetics_user
+          POSTGRES_PASSWORD: aesthetics_pass
+          POSTGRES_DB: aesthetics_db
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd pg_isready
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 5
+
+    env:
+      # No local Homebrew Postgres to collide with on a GitHub-hosted
+      # runner (see the port-5433 gotcha in CLAUDE.md, which is local-only),
+      # so the service container just uses Postgres's standard port.
+      DATABASE_URL: postgresql+asyncpg://aesthetics_user:aesthetics_pass@localhost:5432/aesthetics_db
+      ENVIRONMENT: test
+      # Fake, CI-only — never used for anything real. Real deployments
+      # must override this via a real secret (see app/config.py).
+      JWT_SECRET_KEY: ci-test-secret-key-never-used-for-anything-real
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+          cache: "pip"
+
+      - name: Install dependencies
+        run: pip install -r requirements-dev.txt
+
+      - name: Verify Alembic migrations apply cleanly
+        run: python -m alembic upgrade head
+
+      - name: Run tests
+        run: python -m pytest -q
+
+  dependency-audit:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+          cache: "pip"
+
+      - name: Install pip-audit
+        run: pip install pip-audit
+
+      - name: Audit pinned dependencies for known vulnerabilities
+        run: pip-audit -r requirements.txt

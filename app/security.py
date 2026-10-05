@@ -1,8 +1,10 @@
 """
 Everything related to "who is this request from" lives here: password
 hashing (shared by user creation and login), JWT creation/verification,
-and the `get_current_user` dependency that protected routes use to pull
-the authenticated user out of the request.
+and the `get_current_user`/`get_current_provider`/`get_current_provider_profile`
+dependency chain that protected routes use to pull the authenticated
+user (and, where relevant, their own ProviderProfile row) out of the
+request.
 
 Logging rule for this whole file: never log a password, a raw JWT, or an
 Authorization header value — only ever a user id (and only once it's
@@ -17,10 +19,12 @@ import jwt
 from fastapi import Depends, HTTPException, status
 from fastapi.security import OAuth2PasswordBearer
 from passlib.context import CryptContext
+from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.config import settings
 from app.database import get_db
+from app.models.provider_profile import ProviderProfile
 from app.models.user import User, UserRole
 
 logger = logging.getLogger(__name__)
@@ -84,3 +88,17 @@ async def get_current_provider(current_user: User = Depends(get_current_user)) -
         logger.warning("User %s (role=%s) attempted a provider-only action", current_user.id, current_user.role.value)
         raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Providers only")
     return current_user
+
+
+async def get_current_provider_profile(
+    current_user: User = Depends(get_current_provider), db: AsyncSession = Depends(get_db)
+) -> ProviderProfile:
+    """Another link in the same dependency chain: resolves the
+    authenticated provider's own ProviderProfile row. Every '/me/...'
+    provider-owned endpoint (availability, portfolio) depends on this
+    directly instead of each re-querying 'my profile' by hand."""
+    result = await db.execute(select(ProviderProfile).where(ProviderProfile.user_id == current_user.id))
+    profile = result.scalar_one_or_none()
+    if not profile:
+        raise HTTPException(status_code=404, detail="You don't have a provider profile yet")
+    return profile

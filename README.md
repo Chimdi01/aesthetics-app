@@ -63,8 +63,12 @@ Postgres container — created automatically, never touches your dev data.
   the DB models (so `hashed_password` can never leak into a response)
 - `app/security.py` — password hashing + JWT creation/verification +
   the `get_current_user`/`get_current_provider` auth dependencies
-- `app/routers/` — the endpoints themselves (`users`, `providers`, `auth`,
-  `bookings`)
+- `app/routers/` — the endpoints themselves, one module per concern:
+  `users`, `auth`, `providers` (profile CRUD + search),
+  `provider_availability`, `portfolio`, `bookings` (lifecycle only),
+  `reviews`, `messages`
+- `app/booking_access.py` — shared booking-party authorization, used by
+  both `bookings` and `messages` routers
 - `app/main.py` — wires it all together, what you actually run
 - `alembic/` — schema migrations; `alembic/env.py` is async-aware and
   reads its DB URL from `app.config.settings`

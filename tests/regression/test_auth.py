@@ -8,7 +8,7 @@ async def test_login_with_correct_credentials_returns_token(client):
     # so the whole test session would error out at collection rather than
     # just this test failing.
     await register_user(client, "jane@example.com", password="secret123")
-    response = await client.post("/auth/login", data={"username": "jane@example.com", "password": "secret123"})
+    response = await client.post("/v1/auth/login", data={"username": "jane@example.com", "password": "secret123"})
     assert response.status_code == 200
     body = response.json()
     assert body["token_type"] == "bearer"
@@ -17,12 +17,12 @@ async def test_login_with_correct_credentials_returns_token(client):
 
 async def test_login_with_wrong_password_returns_401(client):
     await register_user(client, "jane@example.com", password="secret123")
-    response = await client.post("/auth/login", data={"username": "jane@example.com", "password": "wrong"})
+    response = await client.post("/v1/auth/login", data={"username": "jane@example.com", "password": "wrong"})
     assert response.status_code == 401
 
 
 async def test_login_with_unknown_email_returns_401(client):
     response = await client.post(
-        "/auth/login", data={"username": "nobody@example.com", "password": "whatever"}
+        "/v1/auth/login", data={"username": "nobody@example.com", "password": "whatever"}
     )
     assert response.status_code == 401

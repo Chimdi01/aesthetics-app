@@ -33,7 +33,7 @@ pwd_context = CryptContext(schemes=["bcrypt"], deprecated="auto")
 
 # tokenUrl points the auto-generated docs at the login endpoint, so
 # /docs's "Authorize" button knows where to send credentials.
-oauth2_scheme = OAuth2PasswordBearer(tokenUrl="/auth/login")
+oauth2_scheme = OAuth2PasswordBearer(tokenUrl="/v1/auth/login")
 
 
 def hash_password(password: str) -> str:

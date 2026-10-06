@@ -22,7 +22,7 @@ from app.database import engine
 from app.logging_config import configure_logging
 from app.rate_limit import limiter
 from app.request_context import request_id_var
-from app.routers import users, providers, provider_availability, portfolio, auth, bookings, reviews, messages
+from app.routers import v1
 
 # Called at import time, before any route module below can log anything —
 # uvicorn configures its own "uvicorn"/"uvicorn.access" loggers separately
@@ -92,21 +92,12 @@ async def log_requests(request: Request, call_next):
     finally:
         request_id_var.reset(token)
 
-# Registration order across these doesn't affect routing correctness
-# today (see the route-ordering docstrings in providers.py/bookings.py for
-# the one risk that DOES matter — /search vs /{profile_id}, /as-customer
-# vs /{booking_id} — both are same-file concerns, not cross-router ones).
-# Grouped by resource anyway: ProviderProfile's own router first, then
-# its sub-resource routers, then Booking's own router, then its
-# sub-resource routers.
-app.include_router(users.router)
-app.include_router(providers.router)
-app.include_router(provider_availability.router)
-app.include_router(portfolio.router)
-app.include_router(auth.router)
-app.include_router(bookings.router)
-app.include_router(reviews.router)
-app.include_router(messages.router)
+# Every feature router is assembled under /v1 in app/routers/v1.py — see
+# that file for why (URL-path versioning) and for the route-ordering
+# notes that still apply within it (/search vs /{profile_id}, /as-customer
+# vs /{booking_id}). Health checks and static media are deliberately NOT
+# versioned (see below) — they're infrastructure, not the API contract.
+app.include_router(v1.router)
 
 # Local-disk portfolio media (see app/storage.py), served directly as
 # static files. check_dir=False: a fresh checkout has no media/ directory

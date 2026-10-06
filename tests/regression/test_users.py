@@ -27,11 +27,11 @@ async def test_create_user_duplicate_email_returns_409(client):
 
 async def test_get_user_by_id_success(client):
     created = (await register_user(client, "jane@example.com")).json()
-    response = await client.get(f"/users/{created['id']}")
+    response = await client.get(f"/v1/users/{created['id']}")
     assert response.status_code == 200
     assert response.json()["email"] == "jane@example.com"
 
 
 async def test_get_user_by_id_not_found_returns_404(client):
-    response = await client.get("/users/00000000-0000-0000-0000-000000000000")
+    response = await client.get("/v1/users/00000000-0000-0000-0000-000000000000")
     assert response.status_code == 404

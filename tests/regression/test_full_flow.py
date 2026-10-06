@@ -13,7 +13,7 @@ async def test_provider_can_register_login_and_publish_a_profile(client):
     token = await login(client, "salon@example.com", "secret123")
 
     profile_response = await client.post(
-        "/providers/",
+        "/v1/providers/",
         json={
             "business_name": "Salon Co",
             "bio": "Full service salon",
@@ -26,6 +26,6 @@ async def test_provider_can_register_login_and_publish_a_profile(client):
     profile = profile_response.json()
     assert profile["user_id"] == user_id
 
-    fetched = await client.get(f"/providers/{profile['id']}")
+    fetched = await client.get(f"/v1/providers/{profile['id']}")
     assert fetched.status_code == 200
     assert fetched.json() == profile

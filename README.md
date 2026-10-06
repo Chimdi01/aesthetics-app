@@ -40,10 +40,14 @@ requested→confirmed→completed/cancelled status flow), JWT auth
    ```
 
 6. Open http://localhost:8000/docs — FastAPI auto-generates an interactive
-   API tester from your code. Create a provider user via `POST /users/`
-   (`role: provider`), log in via `POST /auth/login`, then use the token to
-   create their profile via `POST /providers/`. Create a customer user the
-   same way, then book that provider via `POST /bookings/`.
+   API tester from your code. Every endpoint is versioned under `/v1`
+   (see `app/routers/v1.py`) — `/health` and `/health/ready` are the only
+   exceptions, since those are infrastructure checks, not part of the
+   API contract. Create a provider user via `POST /v1/users/`
+   (`role: provider`), log in via `POST /v1/auth/login`, then use the
+   token to create their profile via `POST /v1/providers/`. Create a
+   customer user the same way, then book that provider via
+   `POST /v1/bookings/`.
 
 ## Run the tests
 ```

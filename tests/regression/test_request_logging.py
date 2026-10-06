@@ -38,7 +38,7 @@ async def test_successful_request_is_logged_at_debug_not_info(client, caplog):
 
 async def test_client_error_response_is_logged_at_warning(client, caplog):
     with caplog.at_level(logging.WARNING, logger="app.main"):
-        response = await client.get("/providers/00000000-0000-0000-0000-000000000000")
+        response = await client.get("/v1/providers/00000000-0000-0000-0000-000000000000")
     assert response.status_code == 404
     assert any("-> 404" in record.message and record.levelname == "WARNING" for record in caplog.records)
 
@@ -54,7 +54,7 @@ async def test_authorization_denial_is_logged_at_warning(client, caplog):
     owner_token = await login(client, "owner@example.com", "secret123")
     profile = (
         await client.post(
-            "/providers/",
+            "/v1/providers/",
             json={"business_name": "Studio", "categories": ["hair"]},
             headers={"Authorization": f"Bearer {owner_token}"},
         )
@@ -66,7 +66,7 @@ async def test_authorization_denial_is_logged_at_warning(client, caplog):
 
     booking = (
         await client.post(
-            "/bookings/",
+            "/v1/bookings/",
             json={
                 "provider_profile_id": profile["id"],
                 "category": "hair",
@@ -82,7 +82,7 @@ async def test_authorization_denial_is_logged_at_warning(client, caplog):
 
     with caplog.at_level(logging.WARNING, logger="app.routers.bookings"):
         response = await client.get(
-            f"/bookings/{booking['id']}", headers={"Authorization": f"Bearer {stranger_token}"}
+            f"/v1/bookings/{booking['id']}", headers={"Authorization": f"Bearer {stranger_token}"}
         )
     assert response.status_code == 403
     assert any("denied access to booking" in record.message for record in caplog.records)
@@ -93,7 +93,7 @@ async def test_failed_login_is_logged_at_warning_without_leaking_password(client
 
     with caplog.at_level(logging.WARNING, logger="app.routers.auth"):
         response = await client.post(
-            "/auth/login", data={"username": "user@example.com", "password": "wrong-password"}
+            "/v1/auth/login", data={"username": "user@example.com", "password": "wrong-password"}
         )
     assert response.status_code == 401
     messages = [record.message for record in caplog.records]

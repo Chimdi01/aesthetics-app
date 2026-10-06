@@ -126,12 +126,12 @@ async def client():
 
 async def register_user(client, email, password="secret123", role="customer", full_name="Test User"):
     response = await client.post(
-        "/users/",
+        "/v1/users/",
         json={"email": email, "password": password, "full_name": full_name, "role": role},
     )
     return response
 
 
 async def login(client, email, password="secret123"):
-    response = await client.post("/auth/login", data={"username": email, "password": password})
+    response = await client.post("/v1/auth/login", data={"username": email, "password": password})
     return response.json()["access_token"]

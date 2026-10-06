@@ -16,6 +16,7 @@ from slowapi import _rate_limit_exceeded_handler
 from slowapi.errors import RateLimitExceeded
 from slowapi.middleware import SlowAPIMiddleware
 from sqlalchemy import text
+from starlette.middleware.gzip import GZipMiddleware
 
 from app.config import settings
 from app.database import engine
@@ -32,6 +33,24 @@ configure_logging(settings.log_level)
 logger = logging.getLogger(__name__)
 
 app = FastAPI(title="Aesthetics App API")
+
+# app.add_middleware() builds a LIFO stack (the most-recently-added call
+# ends up OUTERMOST, closest to the client) — so GZip is added FIRST here
+# even though rate limiting is conceptually "more outer." That's
+# deliberate: GZipMiddleware's minimum_size check breaks (compresses
+# every response regardless of size) if the layer directly beneath it is
+# itself BaseHTTPMiddleware-based — which SlowAPIMiddleware is. Adding
+# GZip first means it wraps the router directly, with nothing
+# BaseHTTPMiddleware-shaped in between; verified empirically (not just
+# reasoned about), since this is a real, reproducible Starlette gotcha,
+# not a hypothetical one — see tests/regression/test_response_compression.py.
+#
+# Compresses response bodies over minimum_size when the client sends
+# Accept-Encoding: gzip — cuts bandwidth egress on JSON responses
+# (search/review/message listings) for free. Starlette's GZipMiddleware
+# already excludes image/video content-types by default, so it won't
+# waste CPU re-compressing already-compressed /media bytes.
+app.add_middleware(GZipMiddleware, minimum_size=500)
 
 # Rate limiting (see app/rate_limit.py for the limiter itself and its
 # single-instance caveat). app.state.limiter is where slowapi's
@@ -91,6 +110,20 @@ async def log_requests(request: Request, call_next):
         return response
     finally:
         request_id_var.reset(token)
+
+
+@app.middleware("http")
+async def cache_immutable_media(request: Request, call_next):
+    response = await call_next(request)
+    if request.url.path.startswith("/media/"):
+        # Filenames under /media are always server-generated UUIDs (see
+        # app/storage.py) and never change content once uploaded — safe
+        # to tell browsers/any future CDN to cache forever instead of
+        # re-fetching the same bytes on every view, which is pure repeat
+        # bandwidth cost for no benefit (the content literally cannot
+        # change without the URL changing too).
+        response.headers["Cache-Control"] = "public, max-age=31536000, immutable"
+    return response
 
 # Every feature router is assembled under /v1 in app/routers/v1.py — see
 # that file for why (URL-path versioning) and for the route-ordering

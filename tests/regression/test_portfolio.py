@@ -1,8 +1,10 @@
 import io
 
 import pytest
+from PIL import Image
 
 from app.config import settings
+from app.main import app
 from tests.conftest import login, register_user
 
 
@@ -11,6 +13,18 @@ def _use_tmp_media_root(tmp_path, monkeypatch):
     # Without this, every upload in this file would land in the real
     # ./media directory at the project root instead of a throwaway one.
     monkeypatch.setattr(settings, "media_root", str(tmp_path))
+    # settings.media_root is read once, at app-startup time, to construct
+    # the /media StaticFiles mount (app/main.py) — patching the setting
+    # alone doesn't retroactively change that already-constructed
+    # instance's directory, so a GET against an uploaded file's URL would
+    # still (fail to) look in the real ./media directory unless this is
+    # patched too.
+    media_route = next(r for r in app.routes if getattr(r, "name", None) == "media")
+    monkeypatch.setattr(media_route.app, "directory", str(tmp_path))
+    # StaticFiles actually serves from self.all_directories (computed
+    # once from `directory` at construction time), not self.directory
+    # directly — patching directory alone isn't enough.
+    monkeypatch.setattr(media_route.app, "all_directories", [str(tmp_path)])
     yield
 
 
@@ -35,8 +49,16 @@ async def _create_customer_headers(client, email="cust@example.com"):
     return {"Authorization": f"Bearer {token}"}
 
 
-def _jpeg_file(content=b"fake-jpeg-bytes"):
-    return {"file": ("photo.jpg", io.BytesIO(content), "image/jpeg")}
+def _real_jpeg_bytes() -> bytes:
+    # A real, decodable JPEG — needed now that uploads are actually run
+    # through Pillow (see app/storage.py), not just trusted by Content-Type.
+    buffer = io.BytesIO()
+    Image.new("RGB", (50, 50), (255, 0, 0)).save(buffer, format="JPEG")
+    return buffer.getvalue()
+
+
+def _jpeg_file(content: bytes | None = None):
+    return {"file": ("photo.jpg", io.BytesIO(content or _real_jpeg_bytes()), "image/jpeg")}
 
 
 async def test_upload_portfolio_media_success(client):
@@ -71,6 +93,32 @@ async def test_upload_portfolio_media_without_provider_profile_returns_404(clien
     provider_headers = await _create_provider_headers(client)
     response = await client.post("/v1/providers/me/portfolio", files=_jpeg_file(), headers=provider_headers)
     assert response.status_code == 404
+
+
+async def test_upload_portfolio_media_rejects_content_claiming_to_be_an_image_but_isnt(client):
+    provider_headers = await _create_provider_headers(client)
+    await _create_provider_profile(client, provider_headers)
+
+    response = await client.post(
+        "/v1/providers/me/portfolio",
+        files=_jpeg_file(content=b"this is not actually a jpeg"),
+        headers=provider_headers,
+    )
+    assert response.status_code == 400
+
+
+async def test_uploaded_photo_is_served_with_long_lived_cache_control(client):
+    provider_headers = await _create_provider_headers(client)
+    await _create_provider_profile(client, provider_headers)
+    uploaded = (
+        await client.post("/v1/providers/me/portfolio", files=_jpeg_file(), headers=provider_headers)
+    ).json()
+
+    response = await client.get(uploaded["url"])
+    assert response.status_code == 200
+    # Safe to cache forever: filenames are server-generated UUIDs that
+    # never get reused for different content (see app/storage.py).
+    assert response.headers["cache-control"] == "public, max-age=31536000, immutable"
 
 
 async def test_upload_portfolio_media_rejects_disallowed_content_type(client):

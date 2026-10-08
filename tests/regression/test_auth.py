@@ -26,3 +26,15 @@ async def test_login_with_unknown_email_returns_401(client):
         "/v1/auth/login", data={"username": "nobody@example.com", "password": "whatever"}
     )
     assert response.status_code == 401
+
+
+async def test_login_is_case_insensitive_on_email(client):
+    # Signup normalizes to lowercase (app/schemas/user.py); login must
+    # normalize the same way or this becomes a false "incorrect email or
+    # password" for anyone who types their email differently than they
+    # registered it.
+    await register_user(client, "Jane@Example.com", password="secret123")
+    response = await client.post(
+        "/v1/auth/login", data={"username": "jane@example.com", "password": "secret123"}
+    )
+    assert response.status_code == 200

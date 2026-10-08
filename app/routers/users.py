@@ -16,10 +16,10 @@ from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.database import get_db
-from app.models.user import User
+from app.models.user import User, UserRole
 from app.rate_limit import limiter
-from app.schemas.user import UserCreate, UserPublic
-from app.security import hash_password
+from app.schemas.user import UserCreate, UserPublic, UserSummary
+from app.security import get_current_user, hash_password
 
 logger = logging.getLogger(__name__)
 
@@ -50,9 +50,20 @@ async def create_user(request: Request, payload: UserCreate, db: AsyncSession = 
     return user
 
 
-@router.get("/{user_id}", response_model=UserPublic)
-async def get_user(user_id: uuid.UUID, db: AsyncSession = Depends(get_db)):
+@router.get("/{user_id}", response_model=UserPublic | UserSummary)
+async def get_user(
+    user_id: uuid.UUID,
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    """Was fully public/unauthenticated, returning email + is_active to
+    anyone who had or guessed a UUID — nothing in the app actually
+    depended on that. Now requires auth, and strangers get UserSummary
+    (no email, no is_active) while you see your own full UserPublic, as
+    does an admin."""
     user = await db.get(User, user_id)
     if not user:
         raise HTTPException(status_code=404, detail="User not found")
-    return user
+    if user.id == current_user.id or current_user.role == UserRole.admin:
+        return UserPublic.model_validate(user)
+    return UserSummary.model_validate(user)

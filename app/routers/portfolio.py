@@ -10,13 +10,14 @@ profile CRUD, search, availability, AND portfolio all in one place.
 import logging
 import uuid
 
-from fastapi import APIRouter, Depends, File, Form, HTTPException, Query, UploadFile
+from fastapi import APIRouter, Depends, File, Form, HTTPException, Query, Request, UploadFile
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.database import get_db
 from app.models.portfolio_media import PortfolioMedia
 from app.models.provider_profile import ProviderProfile
+from app.rate_limit import limiter
 from app.schemas.portfolio_media import PortfolioMediaPublic
 from app.security import get_current_provider_profile
 from app.storage import delete_file, save_upload
@@ -38,7 +39,15 @@ def _portfolio_media_to_public(media: PortfolioMedia) -> PortfolioMediaPublic:
 
 
 @router.post("/me/portfolio", response_model=PortfolioMediaPublic, status_code=201)
+# Tighter than the 200/minute global default — each upload costs a
+# Pillow decode/recompress plus a disk write up to max_upload_size_bytes;
+# the generic default would let one compromised/malicious provider
+# account write up to the size cap x 200 times a minute, which is exactly
+# the storage-cost exposure the compression/cache-header work earlier
+# this session was trying to bound.
+@limiter.limit("20/hour")
 async def upload_portfolio_media(
+    request: Request,
     file: UploadFile = File(...),
     caption: str | None = Form(default=None, max_length=255),
     db: AsyncSession = Depends(get_db),

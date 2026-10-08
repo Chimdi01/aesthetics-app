@@ -23,3 +23,8 @@ def test_user_create_accepts_provider_role():
 def test_user_create_rejects_admin_role():
     with pytest.raises(ValidationError):
         UserCreate(email="a@example.com", password="secret123", full_name="A", role="admin")
+
+
+def test_user_create_normalizes_email_to_lowercase():
+    user = UserCreate(email="User@Example.com", password="secret123", full_name="A")
+    assert user.email == "user@example.com"

@@ -56,6 +56,9 @@ async def create_booking(
         # moderated" to someone who isn't an admin.
         raise HTTPException(status_code=404, detail="Provider profile not found")
 
+    if provider_profile.user_id == current_user.id:
+        raise HTTPException(status_code=400, detail="You can't book your own provider profile")
+
     if payload.category not in provider_profile.categories:
         raise HTTPException(
             status_code=400, detail=f"This provider does not offer '{payload.category.value}'"

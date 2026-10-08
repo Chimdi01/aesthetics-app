@@ -192,6 +192,26 @@ async def test_cannot_review_an_already_reviewed_report(client):
     assert response.status_code == 400
 
 
+async def test_admin_cannot_review_a_report_filed_against_themselves(client):
+    # Promoting after the token is issued is fine — the token only
+    # encodes the user id (see app/security.py); role is re-checked
+    # fresh from the DB on every request, no re-login needed.
+    admin_user, admin_headers = await _create_user(client, "self-admin@example.com")
+    await _promote_to_admin("self-admin@example.com")
+
+    _, reporter_headers = await _create_user(client, "reporter6@example.com")
+    report = (
+        await client.post(
+            f"/v1/users/{admin_user['id']}/report", json={"reason": "spam"}, headers=reporter_headers
+        )
+    ).json()
+
+    response = await client.patch(
+        f"/v1/admin/reports/{report['id']}", json={"status": "dismissed"}, headers=admin_headers
+    )
+    assert response.status_code == 400
+
+
 async def test_review_unknown_report_returns_404(client):
     admin_headers = await _create_admin_headers(client)
     response = await client.patch(
@@ -317,6 +337,16 @@ async def test_admin_can_deactivate_and_reactivate_a_user_account(client):
         f"/v1/admin/users/{target_user['id']}/status", json={"is_active": True}, headers=admin_headers
     )
     assert reactivated.json()["is_active"] is True
+
+
+async def test_admin_cannot_deactivate_their_own_account(client):
+    admin_user, admin_headers = await _create_user(client, "self-deactivate@example.com")
+    await _promote_to_admin("self-deactivate@example.com")
+
+    response = await client.patch(
+        f"/v1/admin/users/{admin_user['id']}/status", json={"is_active": False}, headers=admin_headers
+    )
+    assert response.status_code == 400
 
 
 async def test_set_user_active_status_for_unknown_user_returns_404(client):

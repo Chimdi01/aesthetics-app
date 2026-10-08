@@ -84,6 +84,21 @@ async def test_create_booking_for_unknown_provider_returns_404(client):
     assert response.status_code == 404
 
 
+async def test_provider_cannot_book_their_own_profile(client):
+    profile, provider_headers = await _create_provider_with_profile(client)
+    response = await client.post(
+        "/v1/bookings/",
+        json={
+            "provider_profile_id": profile["id"],
+            "category": "hair",
+            "visit_type": "shop_visit",
+            "scheduled_at": FUTURE,
+        },
+        headers=provider_headers,
+    )
+    assert response.status_code == 400
+
+
 async def test_create_booking_in_the_past_returns_400(client):
     profile, _ = await _create_provider_with_profile(client)
     customer_headers = await _create_customer_headers(client)

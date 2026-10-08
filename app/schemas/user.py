@@ -22,6 +22,16 @@ class UserCreate(BaseModel):
     full_name: str
     role: UserRole = UserRole.customer
 
+    @field_validator("email")
+    @classmethod
+    def normalize_email_case(cls, value: str) -> str:
+        # Without this, "User@x.com" and "user@x.com" register as two
+        # different accounts (the DB unique constraint is case-sensitive)
+        # and a user who typed capitals at signup gets a false "incorrect
+        # password" if they type it lowercase at login — login normalizes
+        # the same way (see app/routers/auth.py) so the two stay matched.
+        return value.lower()
+
     @field_validator("role")
     @classmethod
     def reject_admin_signup(cls, value: UserRole) -> UserRole:
@@ -45,6 +55,21 @@ class UserPublic(BaseModel):
     full_name: str
     role: UserRole
     is_active: bool
+    created_at: datetime
+
+
+class UserSummary(BaseModel):
+    """What GET /users/{id} returns when the caller is looking at
+    someone ELSE (see app/routers/users.py) — no email, no is_active.
+    Email is PII a stranger has no reason to see; is_active would leak
+    a moderation action taken against someone to anyone who asks. The
+    caller sees their own full UserPublic, and so does an admin."""
+
+    model_config = ConfigDict(from_attributes=True)
+
+    id: uuid.UUID
+    full_name: str
+    role: UserRole
     created_at: datetime
 
 

@@ -8,12 +8,13 @@ verification.py/admin.py: act on your own submission vs. act on anyone's.
 import logging
 import uuid
 
-from fastapi import APIRouter, Depends, HTTPException
+from fastapi import APIRouter, Depends, HTTPException, Request
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.database import get_db
 from app.models.report import Report
 from app.models.user import User
+from app.rate_limit import limiter
 from app.schemas.report import ReportCreate, ReportPublic
 from app.security import get_current_user
 
@@ -23,7 +24,12 @@ router = APIRouter(prefix="/users", tags=["reports"])
 
 
 @router.post("/{user_id}/report", response_model=ReportPublic, status_code=201)
+# Tighter than the 200/minute global default — otherwise one account can
+# file 200 reports a minute against the same target, which is itself a
+# harassment vector against whoever gets reported.
+@limiter.limit("10/hour")
 async def report_user(
+    request: Request,
     user_id: uuid.UUID,
     payload: ReportCreate,
     db: AsyncSession = Depends(get_db),

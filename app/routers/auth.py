@@ -31,13 +31,18 @@ router = APIRouter(prefix="/auth", tags=["auth"])
 async def login(
     request: Request, form_data: OAuth2PasswordRequestForm = Depends(), db: AsyncSession = Depends(get_db)
 ):
-    result = await db.execute(select(User).where(User.email == form_data.username))
+    # form_data.username bypasses UserCreate's normalize_email_case (it's
+    # a raw OAuth2 form field, not validated through our schema) — lower
+    # it here too, or a user who signed up with capitals in their email
+    # gets a false "incorrect email or password" typing it in lowercase.
+    normalized_email = form_data.username.lower()
+    result = await db.execute(select(User).where(User.email == normalized_email))
     user = result.scalar_one_or_none()
 
     if not user or not verify_password(form_data.password, user.hashed_password):
         # Email is logged (it's the username being attempted, not a
         # secret), the password never is, successful or not.
-        logger.warning("Failed login attempt for %s", form_data.username)
+        logger.warning("Failed login attempt for %s", normalized_email)
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,
             detail="Incorrect email or password",

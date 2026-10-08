@@ -113,7 +113,16 @@ async def get_current_provider_profile(
     """Another link in the same dependency chain: resolves the
     authenticated provider's own ProviderProfile row. Every '/me/...'
     provider-owned endpoint (availability, portfolio) depends on this
-    directly instead of each re-querying 'my profile' by hand."""
+    directly instead of each re-querying 'my profile' by hand.
+
+    Deliberately does NOT check profile.is_active. A deactivated profile
+    is hidden from search and can't take new bookings (see
+    app/routers/providers.py, app/routers/bookings.py), but the owner can
+    still manage it — add portfolio items, fix availability, etc. — while
+    it's under review. Blocking self-management too would be a stricter
+    policy (closer to what User.is_active does for the whole account);
+    this was confirmed as the intended split, not an oversight, during a
+    gap-analysis pass (see CLAUDE.md)."""
     result = await db.execute(select(ProviderProfile).where(ProviderProfile.user_id == current_user.id))
     profile = result.scalar_one_or_none()
     if not profile:

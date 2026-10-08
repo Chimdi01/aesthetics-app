@@ -76,6 +76,9 @@ async def review_verification(
     if not verification:
         raise HTTPException(status_code=404, detail="Verification not found")
 
+    if verification.user_id == current_admin.id:
+        raise HTTPException(status_code=400, detail="You can't review your own verification submission")
+
     if verification.status != VerificationStatus.pending:
         raise HTTPException(status_code=400, detail=f"Verification is already {verification.status.value}")
 
@@ -118,6 +121,9 @@ async def review_report(
     if not report:
         raise HTTPException(status_code=404, detail="Report not found")
 
+    if report.reported_user_id == current_admin.id:
+        raise HTTPException(status_code=400, detail="You can't review a report filed against yourself")
+
     if report.status != ReportStatus.pending:
         raise HTTPException(status_code=400, detail=f"Report is already {report.status.value}")
 
@@ -152,6 +158,9 @@ async def set_user_active_status(
     cascade back the other way: resuming account access and trusting the
     business profile again are different decisions, and the safer
     default is requiring the profile to be explicitly re-enabled."""
+    if user_id == current_admin.id:
+        raise HTTPException(status_code=400, detail="You can't deactivate your own account")
+
     user = await db.get(User, user_id)
     if not user:
         raise HTTPException(status_code=404, detail="User not found")

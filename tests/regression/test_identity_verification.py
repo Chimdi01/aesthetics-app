@@ -297,6 +297,20 @@ async def test_cannot_review_an_already_reviewed_verification(client):
     assert response.status_code == 400
 
 
+async def test_admin_cannot_review_their_own_verification_submission(client):
+    admin_headers = await _create_admin_headers(client, "self-reviewer@example.com")
+    submitted = (
+        await client.post(
+            "/v1/verification/me", files=_document_file(), data={"document_type": "passport"}, headers=admin_headers
+        )
+    ).json()
+
+    response = await client.patch(
+        f"/v1/admin/verifications/{submitted['id']}", json={"status": "approved"}, headers=admin_headers
+    )
+    assert response.status_code == 400
+
+
 async def test_review_unknown_verification_returns_404(client):
     admin_headers = await _create_admin_headers(client)
     response = await client.patch(

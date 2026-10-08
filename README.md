@@ -49,6 +49,18 @@ requested→confirmed→completed/cancelled status flow), JWT auth
    customer user the same way, then book that provider via
    `POST /v1/bookings/`.
 
+## Creating an admin account
+There is no API endpoint that grants the admin role — `POST /v1/users/`
+rejects `role: admin` outright (see `app/schemas/user.py`), on purpose:
+a solo-operator app doesn't need "promote to admin" as attack surface.
+Sign up normally as `customer` or `provider`, then promote directly in
+Postgres:
+```sql
+UPDATE users SET role = 'admin' WHERE email = 'you@example.com';
+```
+Log in again afterward — admin-only endpoints (`/v1/admin/...`) check
+the role on each request, not something baked into the existing token.
+
 ## Run the tests
 ```
 pip install -r requirements-dev.txt
@@ -70,9 +82,14 @@ Postgres container — created automatically, never touches your dev data.
 - `app/routers/` — the endpoints themselves, one module per concern:
   `users`, `auth`, `providers` (profile CRUD + search),
   `provider_availability`, `portfolio`, `bookings` (lifecycle only),
-  `reviews`, `messages`
+  `reviews`, `messages`, `verification` (self-service ID submission),
+  `admin` (ID verification review; the natural home for future
+  admin-facing features like reporting/flagging)
 - `app/booking_access.py` — shared booking-party authorization, used by
   both `bookings` and `messages` routers
+- `app/verification_storage.py` — identity-document storage, deliberately
+  separate from `app/storage.py` (private, never resized — see
+  `CLAUDE.md`)
 - `app/main.py` — wires it all together, what you actually run
 - `alembic/` — schema migrations; `alembic/env.py` is async-aware and
   reads its DB URL from `app.config.settings`
@@ -80,5 +97,5 @@ Postgres container — created automatically, never touches your dev data.
 - `tests/regression/` — full endpoint tests against a real test DB
 
 ## Next up
-Geospatial provider search (PostGIS), Stripe Connect integration, AR
-try-on, mobile/web frontends.
+Stripe Connect integration, reporting/flagging, AR try-on, mobile/web
+frontends.

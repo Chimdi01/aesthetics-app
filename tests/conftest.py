@@ -29,7 +29,7 @@ from sqlalchemy.pool import NullPool
 from app.config import settings
 from app.database import Base, get_db
 from app.main import app
-from app.models import user, provider_profile, booking, review, portfolio_media, provider_availability, message  # noqa: F401  (import so Base knows about the tables)
+from app.models import user, provider_profile, booking, review, portfolio_media, provider_availability, message, identity_verification  # noqa: F401  (import so Base knows about the tables)
 
 TEST_DB_NAME = "aesthetics_test_db"
 TEST_DATABASE_URL = f"{settings.database_url.rsplit('/', 1)[0]}/{TEST_DB_NAME}"
@@ -84,14 +84,15 @@ def _prepare_test_database():
 @pytest_asyncio.fixture(autouse=True)
 async def _clean_tables():
     """Runs before every test so one test's data can't leak into the
-    next. TRUNCATE ... CASCADE clears messages, provider_availability,
-    portfolio_media, reviews, bookings, provider_profiles and users in one
-    statement regardless of the FKs between them."""
+    next. TRUNCATE ... CASCADE clears identity_verifications, messages,
+    provider_availability, portfolio_media, reviews, bookings,
+    provider_profiles and users in one statement regardless of the FKs
+    between them."""
     async with test_engine.begin() as conn:
         await conn.execute(
             text(
-                "TRUNCATE TABLE messages, provider_availability, portfolio_media, reviews, "
-                "bookings, provider_profiles, users RESTART IDENTITY CASCADE"
+                "TRUNCATE TABLE identity_verifications, messages, provider_availability, "
+                "portfolio_media, reviews, bookings, provider_profiles, users RESTART IDENTITY CASCADE"
             )
         )
     yield

@@ -11,7 +11,7 @@ keeping them separate means:
 import uuid
 from datetime import datetime
 
-from pydantic import BaseModel, EmailStr, ConfigDict
+from pydantic import BaseModel, EmailStr, ConfigDict, field_validator
 
 from app.models.user import UserRole
 
@@ -21,6 +21,18 @@ class UserCreate(BaseModel):
     password: str  # plain text in the request; we hash it before saving
     full_name: str
     role: UserRole = UserRole.customer
+
+    @field_validator("role")
+    @classmethod
+    def reject_admin_signup(cls, value: UserRole) -> UserRole:
+        # POST /v1/users/ is public and unauthenticated — without this,
+        # anyone could self-register with role="admin" and get a fully
+        # privileged account instantly. Admin accounts are provisioned
+        # out-of-band (a direct DB update by the operator, see CLAUDE.md),
+        # never through this endpoint.
+        if value == UserRole.admin:
+            raise ValueError("admin accounts cannot be created via signup")
+        return value
 
 
 class UserPublic(BaseModel):

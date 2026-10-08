@@ -25,7 +25,18 @@ per-router decision made when it actually happens.
 """
 from fastapi import APIRouter
 
-from app.routers import auth, bookings, messages, portfolio, provider_availability, providers, reviews, users
+from app.routers import (
+    admin,
+    auth,
+    bookings,
+    messages,
+    portfolio,
+    provider_availability,
+    providers,
+    reviews,
+    users,
+    verification,
+)
 
 router = APIRouter(prefix="/v1")
 
@@ -37,3 +48,5 @@ router.include_router(auth.router)
 router.include_router(bookings.router)
 router.include_router(reviews.router)
 router.include_router(messages.router)
+router.include_router(verification.router)
+router.include_router(admin.router)

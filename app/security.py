@@ -90,6 +90,17 @@ async def get_current_provider(current_user: User = Depends(get_current_user)) -
     return current_user
 
 
+async def get_current_admin(current_user: User = Depends(get_current_user)) -> User:
+    """Same pattern as get_current_provider. There is no API path that
+    grants the admin role (see UserCreate.reject_admin_signup) — admin
+    accounts only exist via a direct DB update by the operator, which
+    makes this check meaningful rather than a gate anyone could self-pass."""
+    if current_user.role != UserRole.admin:
+        logger.warning("User %s (role=%s) attempted an admin-only action", current_user.id, current_user.role.value)
+        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Admins only")
+    return current_user
+
+
 async def get_current_provider_profile(
     current_user: User = Depends(get_current_provider), db: AsyncSession = Depends(get_db)
 ) -> ProviderProfile:

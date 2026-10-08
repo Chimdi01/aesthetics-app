@@ -23,6 +23,15 @@ class Settings(BaseSettings):
     media_root: str = "media"
     max_upload_size_bytes: int = 25 * 1024 * 1024  # 25 MB
 
+    # Local-disk storage for identity verification documents (see
+    # app/verification_storage.py) — deliberately a SEPARATE directory
+    # from media_root, never mounted as a public StaticFiles route
+    # anywhere. These are government ID photos, not portfolio content;
+    # mixing them into the same root as publicly-served media would make
+    # "is this one actually private" a fact you have to remember per file
+    # instead of a fact that's true of the whole directory.
+    verification_root: str = "verification_documents"
+
     # DB connection pool, per app process/instance. These are conservative
     # dev-appropriate defaults, NOT a scale setting to crank up — the real
     # constraint is (number of app instances x db_pool_size) staying under

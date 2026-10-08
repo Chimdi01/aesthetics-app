@@ -49,6 +49,13 @@ async def create_booking(
     if not provider_profile:
         raise HTTPException(status_code=404, detail="Provider profile not found")
 
+    if not provider_profile.is_active:
+        # Deliberately 404, not 400/403: a deactivated provider should
+        # look the same as one that doesn't exist to a customer trying to
+        # book them — no need to reveal "this profile exists but is
+        # moderated" to someone who isn't an admin.
+        raise HTTPException(status_code=404, detail="Provider profile not found")
+
     if payload.category not in provider_profile.categories:
         raise HTTPException(
             status_code=400, detail=f"This provider does not offer '{payload.category.value}'"

@@ -33,6 +33,7 @@ from app.routers import (
     portfolio,
     provider_availability,
     providers,
+    reports,
     reviews,
     users,
     verification,
@@ -49,4 +50,5 @@ router.include_router(bookings.router)
 router.include_router(reviews.router)
 router.include_router(messages.router)
 router.include_router(verification.router)
+router.include_router(reports.router)
 router.include_router(admin.router)

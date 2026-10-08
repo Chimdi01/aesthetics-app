@@ -44,4 +44,12 @@ class UserPublic(BaseModel):
     email: EmailStr
     full_name: str
     role: UserRole
+    is_active: bool
     created_at: datetime
+
+
+class UserStatusUpdate(BaseModel):
+    """Admin-only (see app/routers/admin.py) — never part of UserCreate;
+    an account always starts active."""
+
+    is_active: bool

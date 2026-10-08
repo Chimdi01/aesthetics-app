@@ -10,7 +10,7 @@ import enum
 import uuid
 from datetime import datetime
 
-from sqlalchemy import String, Enum, DateTime, func
+from sqlalchemy import Boolean, String, Enum, DateTime, func
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 from sqlalchemy.dialects.postgresql import UUID
 
@@ -31,6 +31,13 @@ class User(Base):
     hashed_password: Mapped[str] = mapped_column(String(255), nullable=False)
     full_name: Mapped[str] = mapped_column(String(255), nullable=False)
     role: Mapped[UserRole] = mapped_column(Enum(UserRole), default=UserRole.customer, nullable=False)
+    # Admin-only moderation lever (see app/routers/admin.py), distinct
+    # from ProviderProfile.is_active: this cuts off the ACCOUNT entirely
+    # (login rejected, every request through get_current_user rejected —
+    # see app/security.py), for either role, not just a provider's
+    # business listing being hidden from search while they can still log
+    # in, message, and manage existing bookings.
+    is_active: Mapped[bool] = mapped_column(Boolean, server_default="true", nullable=False)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
 
     provider_profile: Mapped["ProviderProfile | None"] = relationship(

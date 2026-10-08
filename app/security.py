@@ -75,6 +75,12 @@ async def get_current_user(
     if user is None:
         logger.warning("Token valid but no matching user: %s", user_id)
         raise credentials_error
+    if not user.is_active:
+        # Checked here, not just at login: a token issued before the
+        # account was deactivated must stop working immediately, not
+        # keep granting access until it expires on its own.
+        logger.warning("Rejected request from deactivated account: %s", user.id)
+        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="This account has been deactivated")
     logger.debug("Authenticated user %s", user.id)
     return user
 

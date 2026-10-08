@@ -83,8 +83,9 @@ Postgres container — created automatically, never touches your dev data.
   `users`, `auth`, `providers` (profile CRUD + search),
   `provider_availability`, `portfolio`, `bookings` (lifecycle only),
   `reviews`, `messages`, `verification` (self-service ID submission),
-  `admin` (ID verification review; the natural home for future
-  admin-facing features like reporting/flagging)
+  `reports` (self-service — report a user, either role), `admin` (ID
+  verification review, report review, and the two deactivation levers:
+  `ProviderProfile.is_active` vs. the harsher `User.is_active`)
 - `app/booking_access.py` — shared booking-party authorization, used by
   both `bookings` and `messages` routers
 - `app/verification_storage.py` — identity-document storage, deliberately
@@ -97,5 +98,5 @@ Postgres container — created automatically, never touches your dev data.
 - `tests/regression/` — full endpoint tests against a real test DB
 
 ## Next up
-Stripe Connect integration, reporting/flagging, AR try-on, mobile/web
+Stripe Connect integration, AR try-on, mobile/web
 frontends.

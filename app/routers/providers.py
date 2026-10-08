@@ -98,6 +98,7 @@ async def search_providers(
         .outerjoin(ratings, ratings.c.provider_profile_id == ProviderProfile.id)
         .where(
             ProviderProfile.location.is_not(None),
+            ProviderProfile.is_active.is_(True),
             func.ST_DWithin(ProviderProfile.location, origin, radius_km * 1000),
         )
         # id as a tiebreaker keeps pagination stable when distances tie.

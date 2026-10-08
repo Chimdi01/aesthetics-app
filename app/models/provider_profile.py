@@ -9,7 +9,7 @@ import uuid
 from datetime import datetime
 
 from geoalchemy2 import Geography
-from sqlalchemy import String, Text, Integer, DateTime, Enum, ForeignKey, func
+from sqlalchemy import Boolean, String, Text, Integer, DateTime, Enum, ForeignKey, func
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 from sqlalchemy.dialects.postgresql import ARRAY, UUID
 
@@ -52,6 +52,13 @@ class ProviderProfile(Base):
     # distances/radii are in real meters on the earth's surface.
     location: Mapped[str | None] = mapped_column(Geography(geometry_type="POINT", srid=4326), nullable=True)
     address_type: Mapped[AddressType | None] = mapped_column(Enum(AddressType, name="addresstype"), nullable=True)
+    # Admin-only moderation flag (see app/routers/admin.py) — never
+    # client-settable at profile creation or anywhere else. False excludes
+    # the profile from search results and blocks new bookings against it
+    # (see app/routers/bookings.py); direct GET by id still works, since
+    # existing bookings/reviews reference this row via FK and hiding it
+    # entirely would break displaying that history.
+    is_active: Mapped[bool] = mapped_column(Boolean, server_default="true", nullable=False)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
 
     user: Mapped["User"] = relationship(back_populates="provider_profile")

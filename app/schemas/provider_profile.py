@@ -40,7 +40,15 @@ class ProviderProfilePublic(BaseModel):
     years_experience: int | None
     categories: list[ServiceCategory]
     address_type: AddressType | None
+    is_active: bool
     created_at: datetime
+
+
+class ProviderStatusUpdate(BaseModel):
+    """Admin-only (see app/routers/admin.py) — never part of
+    ProviderProfileCreate; a profile always starts active."""
+
+    is_active: bool
 
 
 class ProviderSearchResult(BaseModel):

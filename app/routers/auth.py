@@ -44,6 +44,16 @@ async def login(
             headers={"WWW-Authenticate": "Bearer"},
         )
 
+    if not user.is_active:
+        # Checked separately from the password check above, with its own
+        # message — "your credentials are fine, your account is the
+        # problem" is a meaningfully different thing to tell a user than
+        # "wrong password". get_current_user (app/security.py) re-checks
+        # this on every subsequent request too, so even a token issued
+        # before deactivation stops working immediately.
+        logger.warning("Login rejected for deactivated account: %s", user.id)
+        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="This account has been deactivated")
+
     access_token = create_access_token(user.id)
     logger.info("User %s logged in", user.id)
     return {"access_token": access_token, "token_type": "bearer"}

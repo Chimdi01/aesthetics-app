@@ -6,12 +6,21 @@ compromise, just good hygiene) and emergency rotation (a secret is
 known or suspected to have leaked, e.g. a `gitleaks` CI finding, a
 compromised deploy pipeline, a leaked laptop).
 
-None of these secrets are in a vault (AWS Secrets Manager, HashiCorp
-Vault, etc.) yet — they're plain environment variables (`.env` locally,
-real env vars in production). This runbook assumes manual rotation;
-moving to a vault with automatic rotation is the natural next step
-before real launch, but needs a hosting decision first (see
-`CLAUDE.md`), so it isn't built now.
+**A real secrets vault now exists**: `app/secrets_provider.py`'s
+`"vault"` backend fetches secrets from HashiCorp Vault at startup and
+injects them into the process environment before `Settings` is built —
+see that module's docstring for why Vault specifically (self-hostable,
+not tied to a cloud provider, unlike AWS/GCP Secrets Manager — no
+hosting decision has been made yet, see `CLAUDE.md`). Default backend
+is still `"env"` (plain env vars, as always) — nothing changes unless
+`SECRETS_BACKEND=vault` is set. `docker-compose.yml`'s `vault` service
+and `scripts/seed_vault.sh` are the local way to actually run and test
+this; see the "Rotating via Vault" section below for how rotation
+changes once a real (non-dev-mode) Vault is actually in use.
+
+This runbook otherwise assumes manual rotation of plain env vars — that
+stays accurate for `"env"` mode, and for the parts of a Vault-backed
+setup that still need a human (see below).
 
 ## `JWT_SECRET_KEY`
 
@@ -91,6 +100,34 @@ email *as* this app, which the provider's own dashboard/sending-limits
 typically contain; it doesn't grant account takeover the way a leaked
 JWT key or DB credential does. Revoke the leaked key at the provider
 immediately regardless of whether a replacement is ready yet.
+
+## Rotating via Vault (once `SECRETS_BACKEND=vault` is actually in use)
+
+Rotation becomes: write the new value to Vault
+(`vault kv put secret/aesthetics-app JWT_SECRET_KEY=... DATABASE_URL=...`
+— `scripts/seed_vault.sh` shows the shape), then restart the app so
+`hydrate_environment()` re-reads it at startup. The `JWT_SECRET_KEY` /
+`JWT_PREVIOUS_SECRET_KEYS` routine-vs-emergency procedure above is
+otherwise unchanged — only WHERE the value is edited changes, not the
+procedure around it (still move the old value to
+`JWT_PREVIOUS_SECRET_KEYS` for a routine rotation, still leave a leaked
+key out entirely for an emergency one).
+
+**Not built, worth knowing about before relying on this in production:**
+- The app only reads Vault once, at startup — it does not watch for or
+  pick up a changed secret while running. A Vault-side rotation still
+  needs an app restart to take effect, same as editing a `.env` file
+  today.
+- Auth is a static `VAULT_TOKEN` (fine for local dev against the
+  dev-mode container, which auto-generates one anyway). A production
+  Vault should use AppRole or another non-static auth method instead —
+  flagged in `app/secrets_provider.py`'s docstring as the next thing to
+  swap in there, not built yet.
+- `docker-compose.yml`'s Vault runs in dev mode: in-memory, unsealed
+  automatically, fixed root token. None of that is how you'd run Vault
+  for anything real — it exists only so this integration can be built
+  and tested locally today, same reasoning as every other
+  Docker-Compose service in this project.
 
 ## General
 

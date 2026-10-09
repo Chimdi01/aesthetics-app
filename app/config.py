@@ -2,8 +2,20 @@
 Central place for all configuration. Everything comes from environment
 variables (loaded from a .env file locally, or real env vars in production)
 so we never hardcode secrets like database passwords into the codebase.
+
+hydrate_environment() runs BEFORE Settings is defined/constructed —
+see app/secrets_provider.py. It populates os.environ with secret values
+fetched from whichever backend SECRETS_BACKEND names (default "env", a
+no-op, since secrets are already in the environment). Settings below
+then reads those same environment variables exactly as it always has;
+this module never needs to know whether a value came from a real env
+var, a .env file, or a vault.
 """
 from pydantic_settings import BaseSettings
+
+from app.secrets_provider import hydrate_environment
+
+hydrate_environment()
 
 
 class Settings(BaseSettings):

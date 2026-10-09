@@ -20,6 +20,8 @@ from app.models.identity_verification import IdentityVerification, VerificationS
 from app.models.provider_profile import ProviderProfile
 from app.models.report import Report, ReportStatus
 from app.models.user import User
+from app.refresh_tokens import revoke_all_refresh_tokens_platform_wide
+from app.schemas.auth import RevokeAllSessionsRequest, RevokeAllSessionsResponse
 from app.schemas.identity_verification import (
     VerificationAdminPublic,
     VerificationReviewUpdate,
@@ -207,3 +209,33 @@ async def set_provider_active_status(
         profile_id, payload.is_active, current_admin.id,
     )
     return profile
+
+
+@router.post("/revoke-all-sessions", response_model=RevokeAllSessionsResponse)
+async def revoke_all_sessions(
+    payload: RevokeAllSessionsRequest,
+    db: AsyncSession = Depends(get_db),
+    current_admin: User = Depends(get_current_admin),
+):
+    """The platform-wide incident lever flagged as missing in
+    SECRETS_ROTATION.md: revokes every still-active refresh token for
+    EVERY user at once — every session, everywhere, logged out on its
+    next /auth/refresh call. For a severe-enough incident (e.g. a
+    suspected database leak, where per-user logout-all isn't fast
+    enough to matter) rather than routine moderation, which is why this
+    lives in app/routers/admin.py next to the other admin-only levers,
+    not in app/routers/auth.py with the per-session ones.
+
+    `confirm` must be explicitly `true` in the request body — there is
+    no "undo" for this action, and it's the one admin endpoint whose
+    blast radius is the entire user base at once rather than a single
+    account, so it gets its own explicit confirmation requirement on
+    top of the normal admin-only auth check."""
+    if not payload.confirm:
+        raise HTTPException(status_code=400, detail="Set confirm=true to revoke every session platform-wide")
+
+    revoked_count = await revoke_all_refresh_tokens_platform_wide(db)
+    await db.commit()
+    logger.warning("Platform-wide session revocation triggered by admin=%s (%d sessions revoked)",
+                    current_admin.id, revoked_count)
+    return RevokeAllSessionsResponse(revoked_count=revoked_count)

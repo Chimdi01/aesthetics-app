@@ -34,3 +34,16 @@ class ResetPasswordRequest(BaseModel):
     # — this IS the password going forward, so it goes through the same
     # bar as one set at signup.
     new_password: str = Field(min_length=8)
+
+
+class RevokeAllSessionsRequest(BaseModel):
+    # Required and must be literally true — see
+    # app/routers/admin.py's revoke_all_sessions. This logs out every
+    # user on the platform at once; a bare POST with no body (e.g. a
+    # typo'd request, a misconfigured script) must not be enough to
+    # trigger it.
+    confirm: bool = False
+
+
+class RevokeAllSessionsResponse(BaseModel):
+    revoked_count: int

@@ -26,3 +26,7 @@ geoalchemy2==0.15.2
 slowapi==0.1.10
 limits==5.8.0
 pillow==12.3.0
+# HashiCorp Vault client — app/secrets_provider.py's "vault" backend.
+# Only imported/used when SECRETS_BACKEND=vault; the default "env"
+# backend never touches this.
+hvac==2.4.0

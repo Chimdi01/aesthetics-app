@@ -57,11 +57,26 @@ async def get_valid_refresh_token(db: AsyncSession, raw_token: str) -> RefreshTo
 
 async def revoke_all_refresh_tokens_for_user(db: AsyncSession, user_id: uuid.UUID) -> None:
     """Marks every still-active refresh token for a user revoked in one
-    statement — used by 'log out everywhere' now, and will be reused by
-    password reset later (a credential change should invalidate every
-    existing session, not just whichever one triggered it)."""
+    statement — used by 'log out everywhere' and by password reset (a
+    credential change should invalidate every existing session, not
+    just whichever one triggered it)."""
     await db.execute(
         update(RefreshToken)
         .where(RefreshToken.user_id == user_id, RefreshToken.revoked_at.is_(None))
         .values(revoked_at=datetime.now(UTC))
     )
+
+
+async def revoke_all_refresh_tokens_platform_wide(db: AsyncSession) -> int:
+    """The severe-incident lever flagged as missing in
+    SECRETS_ROTATION.md: every still-active refresh token, for every
+    user, revoked in one statement — not scoped to a single account the
+    way revoke_all_refresh_tokens_for_user is. See
+    app/routers/admin.py's revoke_all_sessions for why this needs an
+    explicit confirmation from the caller before it runs. Returns the
+    number of sessions actually revoked, so the admin calling this gets
+    real feedback instead of a bare 204."""
+    result = await db.execute(
+        update(RefreshToken).where(RefreshToken.revoked_at.is_(None)).values(revoked_at=datetime.now(UTC))
+    )
+    return result.rowcount

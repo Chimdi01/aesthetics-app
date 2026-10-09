@@ -10,5 +10,21 @@ services:
     volumes:
       - aesthetics_pg_data:/var/lib/postgresql/data
 
+  # Local dev-mode Vault — for testing app/secrets_provider.py's
+  # SECRETS_BACKEND=vault path. Dev mode is in-memory (nothing persists
+  # across a restart) and auto-unseals with a fixed root token, which is
+  # exactly right for local testing and exactly wrong for anything real
+  # — this is NOT how you'd run Vault in production (see
+  # SECRETS_ROTATION.md). See scripts/seed_vault.sh to populate it.
+  vault:
+    image: hashicorp/vault:1.18
+    cap_add:
+      - IPC_LOCK
+    environment:
+      VAULT_DEV_ROOT_TOKEN_ID: dev-only-insecure-vault-token
+      VAULT_DEV_LISTEN_ADDRESS: 0.0.0.0:8200
+    ports:
+      - "8200:8200"
+
 volumes:
   aesthetics_pg_data:

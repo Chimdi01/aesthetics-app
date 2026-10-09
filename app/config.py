@@ -14,8 +14,24 @@ class Settings(BaseSettings):
     # MUST override this via a JWT_SECRET_KEY env var — anyone who has this
     # value can forge valid login tokens for any user.
     jwt_secret_key: str = "dev-only-insecure-secret-change-me"
+    # Comma-separated — keys that are no longer used to SIGN new access
+    # tokens but are still ACCEPTED when verifying one, so rotating
+    # jwt_secret_key doesn't instantly break every already-issued access
+    # token. app/security.py's decode_access_token() tries jwt_secret_key
+    # first, then each of these in order. See SECRETS_ROTATION.md for
+    # the actual rotation procedure (routine vs. emergency) — in an
+    # emergency (suspected key leak), do NOT put the leaked key here;
+    # leave it out entirely so tokens forged with it stop verifying
+    # immediately, which is the whole point.
+    jwt_previous_secret_keys: str = ""
     jwt_algorithm: str = "HS256"
     access_token_expire_minutes: int = 60
+    # Refresh tokens (app/refresh_tokens.py) are deliberately much
+    # longer-lived than the access token itself — the whole point of the
+    # pair is "short-lived token for routine requests, long-lived token
+    # that can be revoked (logout, deactivation, password reset) to get
+    # a new one without forcing a password re-entry every hour."
+    refresh_token_expire_days: int = 30
 
     # Local-disk storage for portfolio media (see app/storage.py). A path
     # relative to the project root; not meant to survive a redeploy on most
@@ -58,6 +74,27 @@ class Settings(BaseSettings):
     # real deployment; it exists for local load testing, not production
     # tuning.
     rate_limit_default: str = "200/minute"
+
+    # app/email.py's swap point: "console" logs the email instead of
+    # sending it (see that module's docstring) — the only backend built
+    # so far, since no email-provider account/credentials exist yet.
+    # A real deployment MUST override this once one does; left as
+    # "console" here would mean verification/reset links never actually
+    # reach a real user.
+    email_backend: str = "console"
+    # Where email-verification and password-reset links point — the
+    # frontend route that takes the token from the URL and calls the
+    # corresponding API endpoint. No frontend exists yet (see CLAUDE.md),
+    # so this is a placeholder host; the FRONTEND_BASE_URL env var
+    # overrides it once a real one does.
+    frontend_base_url: str = "http://localhost:3000"
+    # Verification links are low-stakes (worst case: someone else clicks
+    # it, which just marks an email verified a little early) so a long
+    # expiry favors "it still works whenever they get around to checking
+    # their inbox" over tight security. Reset links grant control of the
+    # account, so they expire fast on purpose.
+    email_verification_token_expire_hours: int = 24
+    password_reset_token_expire_minutes: int = 60
 
     class Config:
         env_file = ".env"

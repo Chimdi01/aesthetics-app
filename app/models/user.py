@@ -11,7 +11,7 @@ import uuid
 from datetime import datetime
 from typing import TYPE_CHECKING
 
-from sqlalchemy import Boolean, DateTime, Enum, String, func
+from sqlalchemy import Boolean, DateTime, Enum, Integer, String, func
 from sqlalchemy.dialects.postgresql import UUID
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
@@ -47,6 +47,22 @@ class User(Base):
     # business listing being hidden from search while they can still log
     # in, message, and manage existing bookings.
     is_active: Mapped[bool] = mapped_column(Boolean, server_default="true", nullable=False)
+    # Tracked, not yet ENFORCED anywhere (login, bookings, etc. all work
+    # regardless of this value) — whether/where to gate on it is a
+    # product decision flagged separately (see CLAUDE.md), not assumed
+    # here. server_default="false": a brand-new account hasn't verified
+    # anything yet; see app/routers/users.py for where this gets set to
+    # true (POST /v1/auth/verify-email) and app/routers/auth.py's
+    # resend-verification for re-sending the link.
+    email_verified: Mapped[bool] = mapped_column(Boolean, server_default="false", nullable=False)
+    # Per-ACCOUNT login lockout (app/login_lockout.py) — a second,
+    # independent layer on top of app/rate_limit.py's per-IP limit on
+    # POST /auth/login. The per-IP limit alone doesn't stop a slow,
+    # distributed brute force spread across many IPs against this ONE
+    # account; this does, by tracking consecutive failures on the
+    # account itself regardless of which IP they came from.
+    failed_login_attempts: Mapped[int] = mapped_column(Integer, server_default="0", nullable=False)
+    login_locked_until: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
 
     # Same circular-import-avoidance forward reference as the "User"

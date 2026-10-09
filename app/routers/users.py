@@ -15,7 +15,11 @@ from fastapi import APIRouter, Depends, HTTPException, Request
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.config import settings
 from app.database import get_db
+from app.email import send_email
+from app.email_tokens import issue_email_token
+from app.models.email_token import EmailTokenPurpose
 from app.models.user import User, UserRole
 from app.rate_limit import limiter
 from app.schemas.user import UserCreate, UserPublic, UserSummary
@@ -44,9 +48,34 @@ async def create_user(request: Request, payload: UserCreate, db: AsyncSession = 
         role=payload.role,
     )
     db.add(user)
+    # Explicit flush before staging the EmailToken: User and EmailToken
+    # aren't linked by an ORM relationship() (just a raw FK column), so
+    # SQLAlchemy's flush-ordering doesn't know to insert the user row
+    # before the token row that references it — without this, both
+    # being new objects in the SAME commit hits a real
+    # ForeignKeyViolationError (caught the hard way, via a failing
+    # regression test, not reasoned about in advance). flush() sends the
+    # INSERT and assigns user.id without ending the transaction, so this
+    # stays one atomic commit from the caller's point of view.
+    await db.flush()
+    raw_token = issue_email_token(db, user.id, EmailTokenPurpose.verify_email)
     await db.commit()
     await db.refresh(user)
     logger.info("User created: %s (role=%s)", user.id, user.role.value)
+
+    try:
+        await send_email(
+            user.email,
+            "Verify your email",
+            f"Click to verify your email: {settings.frontend_base_url}/verify-email?token={raw_token}",
+        )
+    except Exception:
+        # Account creation succeeds regardless of whether the email
+        # actually went out — deliverability flakiness shouldn't fail
+        # signup itself. POST /v1/auth/resend-verification is the
+        # fallback if this is the branch that ran.
+        logger.exception("Failed to send verification email to new user %s", user.id)
+
     return user
 
 

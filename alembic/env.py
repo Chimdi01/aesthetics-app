@@ -6,11 +6,22 @@ from sqlalchemy.engine import Connection
 from sqlalchemy.ext.asyncio import async_engine_from_config
 
 from alembic import context
-
 from app.alembic_support import include_object
 from app.config import settings
 from app.database import Base
-from app.models import user, provider_profile, booking, review, portfolio_media, provider_availability, message, identity_verification, report  # noqa: F401  (import so Base knows about the tables)
+from app.models import (  # noqa: F401  (import so Base knows about the tables)
+    booking,
+    email_token,
+    identity_verification,
+    message,
+    portfolio_media,
+    provider_availability,
+    provider_profile,
+    refresh_token,
+    report,
+    review,
+    user,
+)
 
 # this is the Alembic Config object, which provides
 # access to the values within the .ini file in use.

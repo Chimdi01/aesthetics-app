@@ -48,7 +48,33 @@ def create_access_token(user_id: uuid.UUID) -> str:
     expire = datetime.now(UTC) + timedelta(minutes=settings.access_token_expire_minutes)
     # "sub" (subject) is the standard JWT claim for "who this token is about".
     to_encode = {"sub": str(user_id), "exp": expire}
+    # Always the CURRENT key — jwt_previous_secret_keys are accepted for
+    # verification (decode_access_token below) but never used to sign a
+    # new token; that's what makes them "previous".
     return jwt.encode(to_encode, settings.jwt_secret_key, algorithm=settings.jwt_algorithm)
+
+
+def _verification_keys() -> list[str]:
+    previous = [key.strip() for key in settings.jwt_previous_secret_keys.split(",") if key.strip()]
+    return [settings.jwt_secret_key, *previous]
+
+
+def decode_access_token(token: str) -> dict:
+    """Tries the current signing key first, then each key in
+    jwt_previous_secret_keys (app/config.py) in order, succeeding on the
+    first that verifies — see that setting's docstring for the rotation
+    this supports. Raises the last key's PyJWTError if every key fails;
+    the caller only ever turns any failure into the same generic 401
+    regardless of which key(s) it was tried against, so which specific
+    error comes back here doesn't matter."""
+    last_error: jwt.PyJWTError | None = None
+    for key in _verification_keys():
+        try:
+            return jwt.decode(token, key, algorithms=[settings.jwt_algorithm])
+        except jwt.PyJWTError as exc:
+            last_error = exc
+    assert last_error is not None  # _verification_keys() always yields at least jwt_secret_key
+    raise last_error
 
 
 async def get_current_user(
@@ -60,7 +86,7 @@ async def get_current_user(
         headers={"WWW-Authenticate": "Bearer"},
     )
     try:
-        payload = jwt.decode(token, settings.jwt_secret_key, algorithms=[settings.jwt_algorithm])
+        payload = decode_access_token(token)
         user_id = payload.get("sub")
         if user_id is None:
             logger.warning("Rejected token with no 'sub' claim")

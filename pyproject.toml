@@ -35,6 +35,15 @@ ignore = [
     "UP042",
 ]
 
+# Without this, ruff's isort doesn't recognize "app" as this project's
+# own code vs. a third-party package — it alphabetizes "app.*" imports
+# together with genuinely third-party ones (e.g. "alembic") instead of
+# putting them in their own group after a blank line. Caught via
+# alembic/env.py, which merged "from alembic import context" and
+# "from app... import ..." into one unsorted block until this was added.
+[tool.ruff.lint.isort]
+known-first-party = ["app"]
+
 [tool.mypy]
 python_version = "3.12"
 plugins = ["pydantic.mypy"]

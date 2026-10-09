@@ -29,6 +29,18 @@ lever, not just a quality tweak: storage and every future bandwidth-byte
 serving that image back (every search result, every profile view) scale
 with however many bytes get stored, and a typical modern phone photo is
 far higher resolution than any screen will display it at.
+
+Performance note: _compress_image (Pillow — CPU-bound, synchronous) and
+the disk writes/deletes (also synchronous) are run via run_in_threadpool,
+not called directly, even though save_upload/delete_file are themselves
+async. Calling synchronous, CPU-bound or blocking-I/O code directly
+inside an `async def` doesn't background it — it blocks uvicorn's single
+event loop thread for that duration, stalling every other concurrent
+request on that worker (every search, every login, everything) until one
+photo finishes resizing. run_in_threadpool hands the call to a worker
+thread instead, so the event loop stays free to serve other requests
+while it runs. This matters more as upload concurrency grows; at low
+volume you'd never notice.
 """
 import io
 import logging
@@ -37,6 +49,7 @@ from pathlib import Path
 
 from fastapi import HTTPException, UploadFile
 from PIL import Image, UnidentifiedImageError
+from starlette.concurrency import run_in_threadpool
 
 from app.config import settings
 from app.models.portfolio_media import MediaType
@@ -136,7 +149,9 @@ async def save_upload(file: UploadFile, provider_profile_id: uuid.UUID) -> tuple
 
     raw = b"".join(chunks)
     if media_type == MediaType.photo:
-        data = _compress_image(raw)
+        # run_in_threadpool: _compress_image is synchronous, CPU-bound
+        # Pillow work — see the module docstring's Performance note.
+        data = await run_in_threadpool(_compress_image, raw)
         extension = ".jpg"
     else:
         data = raw
@@ -144,14 +159,16 @@ async def save_upload(file: UploadFile, provider_profile_id: uuid.UUID) -> tuple
     destination_dir = Path(settings.media_root) / str(provider_profile_id)
     destination_dir.mkdir(parents=True, exist_ok=True)
     destination_path = destination_dir / f"{uuid.uuid4().hex}{extension}"
-    destination_path.write_bytes(data)
+    # run_in_threadpool: write_bytes is a synchronous, blocking disk
+    # write — same reasoning as _compress_image above.
+    await run_in_threadpool(destination_path.write_bytes, data)
 
     relative_path = f"{provider_profile_id}/{destination_path.name}"
     logger.debug("Saved upload %s (%d bytes, from %d uploaded)", relative_path, len(data), bytes_read)
     return relative_path, media_type
 
 
-def delete_file(relative_path: str) -> None:
+async def delete_file(relative_path: str) -> None:
     # relative_path always comes from a value we generated ourselves in
     # save_upload (never directly from client input) — this containment
     # check is defense in depth, not a fix for a known path here.
@@ -160,5 +177,10 @@ def delete_file(relative_path: str) -> None:
     if media_root not in target.parents:
         logger.error("Refused to delete path outside media_root: %s", relative_path)
         return
-    target.unlink(missing_ok=True)
+    # run_in_threadpool: unlink() is a synchronous, blocking disk call —
+    # same reasoning as save_upload's Performance note above. Lighter
+    # than the compress/write path, but the same class of bug, and this
+    # function is itself called from an async route (see
+    # app/routers/portfolio.py).
+    await run_in_threadpool(target.unlink, missing_ok=True)
     logger.debug("Deleted file %s", relative_path)

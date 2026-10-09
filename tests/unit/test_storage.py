@@ -126,7 +126,7 @@ async def test_delete_file_removes_saved_file():
     saved_path = Path(settings.media_root) / relative_path
     assert saved_path.exists()
 
-    delete_file(relative_path)
+    await delete_file(relative_path)
     assert not saved_path.exists()
 
 
@@ -136,7 +136,7 @@ async def test_delete_file_refuses_to_escape_media_root():
     outside_file = Path(settings.media_root).parent / "should_not_be_touched.txt"
     outside_file.write_text("keep me")
 
-    delete_file("../should_not_be_touched.txt")
+    await delete_file("../should_not_be_touched.txt")
 
     assert outside_file.exists()
     outside_file.unlink()

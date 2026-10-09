@@ -60,7 +60,7 @@ async def get_verification_document(
     if not verification:
         raise HTTPException(status_code=404, detail="Verification not found")
 
-    content = read_verification_document(verification.file_path)
+    content = await read_verification_document(verification.file_path)
     return Response(
         content=content,
         media_type=content_type_for_path(verification.file_path),

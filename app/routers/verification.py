@@ -55,7 +55,7 @@ async def submit_verification(
         # Resubmission (after rejection, or fixing a pending one) replaces
         # the row in place rather than creating a new one — see
         # app/models/identity_verification.py for why.
-        delete_verification_document(existing.file_path)
+        await delete_verification_document(existing.file_path)
         existing.document_type = document_type
         existing.file_path = relative_path
         existing.status = VerificationStatus.pending
@@ -93,7 +93,7 @@ async def get_my_verification_document(
     if not verification:
         raise HTTPException(status_code=404, detail="No verification submitted yet")
 
-    content = read_verification_document(verification.file_path)
+    content = await read_verification_document(verification.file_path)
     # The opposite of /media's Cache-Control: this is a government ID
     # photo — no shared or browser cache should ever retain a copy.
     return Response(

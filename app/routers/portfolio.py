@@ -89,7 +89,7 @@ async def delete_portfolio_media(
 
     await db.delete(media)
     await db.commit()
-    delete_file(media.file_path)
+    await delete_file(media.file_path)
     logger.info("Portfolio media deleted: %s (provider=%s)", media_id, profile.id)
 
 

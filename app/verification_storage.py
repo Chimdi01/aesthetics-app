@@ -20,6 +20,15 @@ requirements are opposite in two ways that matter:
 Still decoded and validated as a real image for the same reason as
 app/storage.py: a spoofed/corrupt upload gets a clean 400, not a file
 written to disk that nothing can open when an admin goes to review it.
+
+Performance note: same reasoning as app/storage.py's Performance note —
+Image.verify() and every disk read/write/delete here are synchronous,
+blocking calls, run via run_in_threadpool rather than called directly,
+even though every function here is (or, for read/delete, now is)
+`async def`. Lower real-world impact than app/storage.py (one admin
+reviewing one document occasionally, vs. portfolio uploads at real
+customer-browsing volume), but the same bug class, so fixed the same way
+for consistency rather than left as a smaller version of the same risk.
 """
 import io
 import logging
@@ -28,6 +37,7 @@ from pathlib import Path
 
 from fastapi import HTTPException, UploadFile
 from PIL import Image, UnidentifiedImageError
+from starlette.concurrency import run_in_threadpool
 
 from app.config import settings
 
@@ -61,22 +71,34 @@ async def save_verification_document(file: UploadFile, user_id: uuid.UUID) -> st
         raise HTTPException(status_code=400, detail="Uploaded file is empty")
 
     raw = b"".join(chunks)
-    try:
-        with Image.open(io.BytesIO(raw)) as image:
-            image.verify()
-    except UnidentifiedImageError:
-        # from None: same reasoning as app/storage.py's identical check.
-        raise HTTPException(status_code=400, detail="Uploaded file is not a valid image") from None
+
+    def _verify_image() -> None:
+        # Wrapped in its own function so run_in_threadpool below has a
+        # single zero-arg callable to hand to a worker thread, same as
+        # how app/storage.py's _compress_image is a free function for
+        # the same reason.
+        try:
+            with Image.open(io.BytesIO(raw)) as image:
+                image.verify()
+        except UnidentifiedImageError:
+            # from None: same reasoning as app/storage.py's identical check.
+            raise HTTPException(status_code=400, detail="Uploaded file is not a valid image") from None
+
+    # run_in_threadpool: Image.verify() is synchronous, CPU-bound Pillow
+    # work — see the module docstring's Performance note.
+    await run_in_threadpool(_verify_image)
 
     destination_dir = Path(settings.verification_root) / str(user_id)
     destination_dir.mkdir(parents=True, exist_ok=True)
     destination_path = destination_dir / f"{uuid.uuid4().hex}{extension}"
-    destination_path.write_bytes(raw)
+    # run_in_threadpool: write_bytes is a synchronous, blocking disk
+    # write — same reasoning as above.
+    await run_in_threadpool(destination_path.write_bytes, raw)
 
     return f"{user_id}/{destination_path.name}"
 
 
-def read_verification_document(relative_path: str) -> bytes:
+async def read_verification_document(relative_path: str) -> bytes:
     verification_root = Path(settings.verification_root).resolve()
     target = (verification_root / relative_path).resolve()
     if verification_root not in target.parents:
@@ -84,7 +106,9 @@ def read_verification_document(relative_path: str) -> bytes:
         raise HTTPException(status_code=404, detail="Document not found")
     if not target.is_file():
         raise HTTPException(status_code=404, detail="Document not found")
-    return target.read_bytes()
+    # run_in_threadpool: read_bytes is a synchronous, blocking disk read
+    # — same reasoning as save_verification_document above.
+    return await run_in_threadpool(target.read_bytes)
 
 
 def content_type_for_path(relative_path: str) -> str:
@@ -95,10 +119,12 @@ def content_type_for_path(relative_path: str) -> str:
     return "application/octet-stream"
 
 
-def delete_verification_document(relative_path: str) -> None:
+async def delete_verification_document(relative_path: str) -> None:
     verification_root = Path(settings.verification_root).resolve()
     target = (verification_root / relative_path).resolve()
     if verification_root not in target.parents:
         logging.getLogger(__name__).error("Refused to delete path outside verification_root: %s", relative_path)
         return
-    target.unlink(missing_ok=True)
+    # run_in_threadpool: unlink() is a synchronous, blocking disk call —
+    # same reasoning as save_verification_document above.
+    await run_in_threadpool(target.unlink, missing_ok=True)

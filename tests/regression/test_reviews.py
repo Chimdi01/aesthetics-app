@@ -1,8 +1,8 @@
-from datetime import datetime, timedelta, timezone
+from datetime import UTC, datetime, timedelta
 
 from tests.conftest import login, register_user
 
-FUTURE = (datetime.now(timezone.utc) + timedelta(days=1)).isoformat()
+FUTURE = (datetime.now(UTC) + timedelta(days=1)).isoformat()
 
 
 async def _create_provider_with_profile(client, email="jane@example.com", categories=None):
@@ -99,7 +99,7 @@ async def test_create_review_by_someone_other_than_the_customer_returns_403(clie
 
 
 async def test_create_review_on_a_not_yet_completed_booking_returns_400(client):
-    profile, provider_headers = await _create_provider_with_profile(client)
+    profile, _ = await _create_provider_with_profile(client)
     customer_headers = await _create_customer_headers(client)
     booking = (
         await client.post(

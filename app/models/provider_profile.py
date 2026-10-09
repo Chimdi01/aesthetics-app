@@ -7,13 +7,19 @@ for rows that need it, one-to-one with a User where role == provider.
 import enum
 import uuid
 from datetime import datetime
+from typing import TYPE_CHECKING
 
 from geoalchemy2 import Geography
-from sqlalchemy import Boolean, String, Text, Integer, DateTime, Enum, ForeignKey, func
-from sqlalchemy.orm import Mapped, mapped_column, relationship
+from sqlalchemy import Boolean, DateTime, Enum, ForeignKey, Integer, String, Text, func
 from sqlalchemy.dialects.postgresql import ARRAY, UUID
+from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from app.database import Base
+
+# TYPE_CHECKING-only import — see app/models/user.py's matching comment;
+# same circular-import-avoidance forward reference, mirrored.
+if TYPE_CHECKING:
+    from app.models.user import User
 
 
 class ServiceCategory(str, enum.Enum):
@@ -61,4 +67,11 @@ class ProviderProfile(Base):
     is_active: Mapped[bool] = mapped_column(Boolean, server_default="true", nullable=False)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
 
+    # "User" is a string forward-reference specifically so this module
+    # never has to import app.models.user at RUNTIME (user.py imports this
+    # module right back for its own "ProviderProfile" forward reference —
+    # a real circular import otherwise). SQLAlchemy resolves the string at
+    # configure time via its own mapper registry; the TYPE_CHECKING import
+    # above is what lets mypy (and ruff's F821) resolve the name statically
+    # without that runtime import ever happening.
     user: Mapped["User"] = relationship(back_populates="provider_profile")

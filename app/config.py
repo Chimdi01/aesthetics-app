@@ -47,6 +47,18 @@ class Settings(BaseSettings):
     # across the app).
     log_level: str = "INFO"
 
+    # The global safety-net rate limit applied to every route that doesn't
+    # have its own tighter @limiter.limit(...) (see app/rate_limit.py).
+    # Configurable, not hardcoded, specifically so a load test run from a
+    # single machine (and therefore a single client IP, which is what
+    # slowapi keys on) can raise this without touching code — every VU in
+    # a local k6 run shares one real IP, so the per-IP default would
+    # otherwise cap aggregate throughput at 200/minute regardless of how
+    # much headroom the app/DB actually have. Never override this in a
+    # real deployment; it exists for local load testing, not production
+    # tuning.
+    rate_limit_default: str = "200/minute"
+
     class Config:
         env_file = ".env"
 

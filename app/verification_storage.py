@@ -65,7 +65,8 @@ async def save_verification_document(file: UploadFile, user_id: uuid.UUID) -> st
         with Image.open(io.BytesIO(raw)) as image:
             image.verify()
     except UnidentifiedImageError:
-        raise HTTPException(status_code=400, detail="Uploaded file is not a valid image")
+        # from None: same reasoning as app/storage.py's identical check.
+        raise HTTPException(status_code=400, detail="Uploaded file is not a valid image") from None
 
     destination_dir = Path(settings.verification_root) / str(user_id)
     destination_dir.mkdir(parents=True, exist_ok=True)

@@ -1,8 +1,8 @@
-from datetime import datetime, timedelta, timezone
+from datetime import UTC, datetime, timedelta
 
 from tests.conftest import login, register_user
 
-FUTURE = (datetime.now(timezone.utc) + timedelta(days=1)).isoformat()
+FUTURE = (datetime.now(UTC) + timedelta(days=1)).isoformat()
 
 
 async def _create_provider_with_profile(client, email="jane@example.com", categories=None):
@@ -40,7 +40,7 @@ async def _create_booking(client, provider_profile_id, customer_headers):
 
 
 async def test_customer_can_send_message(client):
-    profile, provider_headers = await _create_provider_with_profile(client)
+    profile, _ = await _create_provider_with_profile(client)
     customer_headers = await _create_customer_headers(client)
     booking = await _create_booking(client, profile["id"], customer_headers)
 
@@ -66,7 +66,7 @@ async def test_provider_can_send_message(client):
 
 
 async def test_send_message_without_token_returns_401(client):
-    profile, provider_headers = await _create_provider_with_profile(client)
+    profile, _ = await _create_provider_with_profile(client)
     customer_headers = await _create_customer_headers(client)
     booking = await _create_booking(client, profile["id"], customer_headers)
 
@@ -75,7 +75,7 @@ async def test_send_message_without_token_returns_401(client):
 
 
 async def test_send_message_by_stranger_returns_403(client):
-    profile, provider_headers = await _create_provider_with_profile(client)
+    profile, _ = await _create_provider_with_profile(client)
     customer_headers = await _create_customer_headers(client)
     booking = await _create_booking(client, profile["id"], customer_headers)
 
@@ -97,7 +97,7 @@ async def test_send_message_to_unknown_booking_returns_404(client):
 
 
 async def test_send_message_with_blank_body_returns_422(client):
-    profile, provider_headers = await _create_provider_with_profile(client)
+    profile, _ = await _create_provider_with_profile(client)
     customer_headers = await _create_customer_headers(client)
     booking = await _create_booking(client, profile["id"], customer_headers)
 
@@ -139,7 +139,7 @@ async def test_list_messages_visible_to_customer_and_provider_not_stranger(clien
 
 
 async def test_list_messages_without_token_returns_401(client):
-    profile, provider_headers = await _create_provider_with_profile(client)
+    profile, _ = await _create_provider_with_profile(client)
     customer_headers = await _create_customer_headers(client)
     booking = await _create_booking(client, profile["id"], customer_headers)
 
@@ -156,7 +156,7 @@ async def test_list_messages_for_unknown_booking_returns_404(client):
 
 
 async def test_list_messages_respects_limit_and_offset(client):
-    profile, provider_headers = await _create_provider_with_profile(client)
+    profile, _ = await _create_provider_with_profile(client)
     customer_headers = await _create_customer_headers(client)
     booking = await _create_booking(client, profile["id"], customer_headers)
 
@@ -174,7 +174,7 @@ async def test_list_messages_respects_limit_and_offset(client):
 
 
 async def test_list_messages_rejects_limit_over_200(client):
-    profile, provider_headers = await _create_provider_with_profile(client)
+    profile, _ = await _create_provider_with_profile(client)
     customer_headers = await _create_customer_headers(client)
     booking = await _create_booking(client, profile["id"], customer_headers)
 
@@ -185,7 +185,7 @@ async def test_list_messages_rejects_limit_over_200(client):
 
 
 async def test_messages_are_scoped_to_their_booking(client):
-    profile, provider_headers = await _create_provider_with_profile(client)
+    profile, _ = await _create_provider_with_profile(client)
     customer_headers = await _create_customer_headers(client)
     booking_a = await _create_booking(client, profile["id"], customer_headers)
     booking_b = await _create_booking(client, profile["id"], customer_headers)

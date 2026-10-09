@@ -12,14 +12,17 @@ profile CRUD, search, availability, AND portfolio all in one place.
 import logging
 import uuid
 
-from fastapi import APIRouter, Depends, HTTPException, Query
+from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy import delete, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.database import get_db
 from app.models.provider_availability import DayOfWeek, ProviderAvailability
 from app.models.provider_profile import ProviderProfile
-from app.schemas.provider_availability import ProviderAvailabilityPublic, ProviderAvailabilityUpdate
+from app.schemas.provider_availability import (
+    ProviderAvailabilityPublic,
+    ProviderAvailabilityUpdate,
+)
 from app.security import get_current_provider_profile
 
 logger = logging.getLogger(__name__)

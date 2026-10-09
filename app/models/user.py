@@ -9,12 +9,21 @@ later session) holds the extra fields that only providers need
 import enum
 import uuid
 from datetime import datetime
+from typing import TYPE_CHECKING
 
-from sqlalchemy import Boolean, String, Enum, DateTime, func
-from sqlalchemy.orm import Mapped, mapped_column, relationship
+from sqlalchemy import Boolean, DateTime, Enum, String, func
 from sqlalchemy.dialects.postgresql import UUID
+from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from app.database import Base
+
+# TYPE_CHECKING-only import: this is how mypy resolves the "ProviderProfile"
+# string forward-reference below without creating a real circular import at
+# runtime (provider_profile.py imports this module right back for its own
+# "User" forward reference — see that file's comment). Ruff's F821 also
+# recognizes this pattern, so no noqa is needed either.
+if TYPE_CHECKING:
+    from app.models.provider_profile import ProviderProfile
 
 
 class UserRole(str, enum.Enum):
@@ -40,6 +49,7 @@ class User(Base):
     is_active: Mapped[bool] = mapped_column(Boolean, server_default="true", nullable=False)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
 
-    provider_profile: Mapped["ProviderProfile | None"] = relationship(
-        back_populates="user", uselist=False
-    )
+    # Same circular-import-avoidance forward reference as the "User"
+    # string in app/models/provider_profile.py — see that file's comment
+    # and the TYPE_CHECKING import above.
+    provider_profile: Mapped["ProviderProfile | None"] = relationship(back_populates="user", uselist=False)

@@ -8,7 +8,7 @@ Base: every model class inherits from this so SQLAlchemy knows about it.
 get_db: a "dependency" FastAPI injects into route functions, giving each
         request its own database session and cleaning it up afterward.
 """
-from sqlalchemy.ext.asyncio import create_async_engine, AsyncSession, async_sessionmaker
+from sqlalchemy.ext.asyncio import async_sessionmaker, create_async_engine
 from sqlalchemy.orm import DeclarativeBase
 
 from app.config import settings

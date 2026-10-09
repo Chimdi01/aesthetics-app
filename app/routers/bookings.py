@@ -20,7 +20,7 @@ need it first.
 """
 import logging
 import uuid
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 
 from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy import select
@@ -64,7 +64,7 @@ async def create_booking(
             status_code=400, detail=f"This provider does not offer '{payload.category.value}'"
         )
 
-    if payload.scheduled_at <= datetime.now(timezone.utc):
+    if payload.scheduled_at <= datetime.now(UTC):
         raise HTTPException(status_code=400, detail="scheduled_at must be in the future")
 
     booking = Booking(
@@ -138,7 +138,7 @@ async def update_booking_status(
     if not booking:
         raise HTTPException(status_code=404, detail="Booking not found")
 
-    is_customer, is_provider = await authorize_booking_party(db, booking, current_user)
+    _, is_provider = await authorize_booking_party(db, booking, current_user)
 
     if booking.status in (BookingStatus.completed, BookingStatus.cancelled):
         raise HTTPException(

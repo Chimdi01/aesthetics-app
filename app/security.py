@@ -13,7 +13,7 @@ raw token string itself).
 """
 import logging
 import uuid
-from datetime import datetime, timedelta, timezone
+from datetime import UTC, datetime, timedelta
 
 import jwt
 from fastapi import Depends, HTTPException, status
@@ -45,7 +45,7 @@ def verify_password(plain_password: str, hashed_password: str) -> bool:
 
 
 def create_access_token(user_id: uuid.UUID) -> str:
-    expire = datetime.now(timezone.utc) + timedelta(minutes=settings.access_token_expire_minutes)
+    expire = datetime.now(UTC) + timedelta(minutes=settings.access_token_expire_minutes)
     # "sub" (subject) is the standard JWT claim for "who this token is about".
     to_encode = {"sub": str(user_id), "exp": expire}
     return jwt.encode(to_encode, settings.jwt_secret_key, algorithm=settings.jwt_algorithm)
@@ -69,7 +69,12 @@ async def get_current_user(
         # str(exc) is a short, fixed message from PyJWT (e.g. "Signature
         # has expired") — never the token itself.
         logger.warning("Rejected invalid/expired token: %s", exc)
-        raise credentials_error
+        # from None: credentials_error is a deliberately generic,
+        # client-facing 401 — chaining PyJWT's internal exception onto it
+        # risks that detail surfacing somewhere it shouldn't (a debugger,
+        # a future exception handler) for no benefit, since the specific
+        # reason is already in the warning above.
+        raise credentials_error from None
 
     user = await db.get(User, uuid.UUID(user_id))
     if user is None:

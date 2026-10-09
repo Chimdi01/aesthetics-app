@@ -71,18 +71,28 @@ def _compress_image(raw: bytes) -> bytes:
     async/background processing (transcoding is slow enough to block a
     request), a separate piece of work if it's ever needed."""
     try:
-        with Image.open(io.BytesIO(raw)) as image:
+        with Image.open(io.BytesIO(raw)) as opened:
             # convert("RGB"): drops alpha/palette modes (e.g. a PNG with
             # transparency) that JPEG can't encode — losing transparency
             # is an acceptable tradeoff for a photo portfolio, not a
-            # format meant for graphics/icons.
-            image = image.convert("RGB")
-            image.thumbnail((_MAX_IMAGE_DIMENSION, _MAX_IMAGE_DIMENSION), Image.LANCZOS)
+            # format meant for graphics/icons. A separate name (not
+            # reassigning `opened`) because convert() returns the base
+            # Image type, not the narrower ImageFile type `opened` is —
+            # mypy flags the narrowing loss on a same-name reassignment.
+            rgb_image = opened.convert("RGB")
+            # Image.Resampling.LANCZOS, not the bare Image.LANCZOS alias:
+            # the alias is deprecated (removed outright in some future
+            # Pillow release per their own deprecation notice) and isn't
+            # in current type stubs either.
+            rgb_image.thumbnail((_MAX_IMAGE_DIMENSION, _MAX_IMAGE_DIMENSION), Image.Resampling.LANCZOS)
             buffer = io.BytesIO()
-            image.save(buffer, format="JPEG", quality=_JPEG_QUALITY, optimize=True)
+            rgb_image.save(buffer, format="JPEG", quality=_JPEG_QUALITY, optimize=True)
             return buffer.getvalue()
     except UnidentifiedImageError:
-        raise HTTPException(status_code=400, detail="Uploaded file is not a valid image")
+        # from None: a corrupt/spoofed upload's decode error isn't
+        # actionable beyond "it's not a valid image", which the message
+        # already says.
+        raise HTTPException(status_code=400, detail="Uploaded file is not a valid image") from None
 
 
 async def save_upload(file: UploadFile, provider_profile_id: uuid.UUID) -> tuple[str, MediaType]:
@@ -92,7 +102,9 @@ async def save_upload(file: UploadFile, provider_profile_id: uuid.UUID) -> tuple
         # WARNING, not INFO: a legitimate client never sends a disallowed
         # type (the frontend only offers valid pickers) — a volume of
         # these is a signal worth noticing, not routine traffic.
-        logger.warning("Rejected upload for provider %s: disallowed content-type '%s'", provider_profile_id, file.content_type)
+        logger.warning(
+            "Rejected upload for provider %s: disallowed content-type '%s'", provider_profile_id, file.content_type
+        )
         raise HTTPException(
             status_code=400,
             detail=f"Unsupported file type '{file.content_type}'. Allowed: {sorted(ALLOWED_CONTENT_TYPES)}",

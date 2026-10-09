@@ -1,6 +1,5 @@
 import io
 
-import pytest
 from PIL import Image
 from sqlalchemy import text
 
@@ -31,7 +30,7 @@ async def _promote_to_admin(email: str) -> None:
 
 
 async def _create_admin_headers(client, email="admin@example.com"):
-    headers = await _create_user_headers(client, email, role="customer")
+    await _create_user_headers(client, email, role="customer")
     await _promote_to_admin(email)
     # Re-login: the existing token's "sub" is still valid (role isn't
     # embedded in the token), so this isn't strictly required for auth to
@@ -101,7 +100,9 @@ async def test_get_my_verification_document_round_trips(client):
 
 async def test_resubmit_while_pending_replaces_previous_submission(client):
     headers = await _create_user_headers(client)
-    await client.post("/v1/verification/me", files=_document_file(), data={"document_type": "passport"}, headers=headers)
+    await client.post(
+        "/v1/verification/me", files=_document_file(), data={"document_type": "passport"}, headers=headers
+    )
 
     new_content = _real_jpeg_bytes()
     response = await client.post(
@@ -202,7 +203,9 @@ async def test_non_admin_cannot_review_verification(client):
 
 async def test_admin_can_list_and_filter_verifications(client):
     headers_a = await _create_user_headers(client, "a@example.com")
-    await client.post("/v1/verification/me", files=_document_file(), data={"document_type": "passport"}, headers=headers_a)
+    await client.post(
+        "/v1/verification/me", files=_document_file(), data={"document_type": "passport"}, headers=headers_a
+    )
 
     headers_b = await _create_user_headers(client, "b@example.com")
     submitted_b = (

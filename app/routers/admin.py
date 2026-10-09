@@ -9,7 +9,7 @@ vs. only your own).
 """
 import logging
 import uuid
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 
 from fastapi import APIRouter, Depends, HTTPException, Query, Response
 from sqlalchemy import select
@@ -20,7 +20,10 @@ from app.models.identity_verification import IdentityVerification, VerificationS
 from app.models.provider_profile import ProviderProfile
 from app.models.report import Report, ReportStatus
 from app.models.user import User
-from app.schemas.identity_verification import VerificationAdminPublic, VerificationReviewUpdate
+from app.schemas.identity_verification import (
+    VerificationAdminPublic,
+    VerificationReviewUpdate,
+)
 from app.schemas.provider_profile import ProviderProfilePublic, ProviderStatusUpdate
 from app.schemas.report import ReportAdminPublic, ReportReviewUpdate
 from app.schemas.user import UserPublic, UserStatusUpdate
@@ -85,7 +88,7 @@ async def review_verification(
     verification.status = payload.status
     verification.rejection_reason = payload.rejection_reason if payload.status == VerificationStatus.rejected else None
     verification.reviewed_by = current_admin.id
-    verification.reviewed_at = datetime.now(timezone.utc)
+    verification.reviewed_at = datetime.now(UTC)
     await db.commit()
     await db.refresh(verification)
     logger.info(
@@ -129,7 +132,7 @@ async def review_report(
 
     report.status = payload.status
     report.resolved_by = current_admin.id
-    report.resolved_at = datetime.now(timezone.utc)
+    report.resolved_at = datetime.now(UTC)
     await db.commit()
     await db.refresh(report)
     logger.info(

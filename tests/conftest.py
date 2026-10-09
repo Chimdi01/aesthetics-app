@@ -29,7 +29,17 @@ from sqlalchemy.pool import NullPool
 from app.config import settings
 from app.database import Base, get_db
 from app.main import app
-from app.models import user, provider_profile, booking, review, portfolio_media, provider_availability, message, identity_verification, report  # noqa: F401  (import so Base knows about the tables)
+from app.models import (  # noqa: F401  (import so Base knows about the tables)
+    booking,
+    identity_verification,
+    message,
+    portfolio_media,
+    provider_availability,
+    provider_profile,
+    report,
+    review,
+    user,
+)
 
 TEST_DB_NAME = "aesthetics_test_db"
 TEST_DATABASE_URL = f"{settings.database_url.rsplit('/', 1)[0]}/{TEST_DB_NAME}"

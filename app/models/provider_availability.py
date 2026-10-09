@@ -27,8 +27,8 @@ import uuid
 from datetime import datetime, time
 
 from sqlalchemy import CheckConstraint, DateTime, Enum, ForeignKey, Index, Time, func
-from sqlalchemy.orm import Mapped, mapped_column
 from sqlalchemy.dialects.postgresql import UUID
+from sqlalchemy.orm import Mapped, mapped_column
 
 from app.database import Base
 

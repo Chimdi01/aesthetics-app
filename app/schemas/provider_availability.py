@@ -1,6 +1,7 @@
 import uuid
 from collections import defaultdict
 from datetime import time
+from itertools import pairwise
 
 from pydantic import BaseModel, ConfigDict, Field, model_validator
 
@@ -40,7 +41,11 @@ class ProviderAvailabilityUpdate(BaseModel):
 
         for day, ranges in by_day.items():
             ranges.sort()
-            for (_, prev_end), (next_start, _) in zip(ranges, ranges[1:]):
+            # pairwise(ranges): exactly "each range against the next one"
+            # — clearer than zip(ranges, ranges[1:]) and sidesteps the
+            # zip-without-strict= question entirely, since there's no
+            # second sequence that could mismatch in length.
+            for (_, prev_end), (next_start, _) in pairwise(ranges):
                 if next_start < prev_end:
                     raise ValueError(f"overlapping time ranges for {day.value}")
         return self

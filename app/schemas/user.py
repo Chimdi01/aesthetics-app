@@ -11,7 +11,7 @@ keeping them separate means:
 import uuid
 from datetime import datetime
 
-from pydantic import BaseModel, EmailStr, ConfigDict, Field, field_validator
+from pydantic import BaseModel, ConfigDict, EmailStr, Field, field_validator
 
 from app.models.user import UserRole
 

@@ -1,9 +1,9 @@
-from datetime import datetime, timedelta, timezone
+from datetime import UTC, datetime, timedelta
 
 from tests.conftest import login, register_user
 
-FUTURE = (datetime.now(timezone.utc) + timedelta(days=1)).isoformat()
-PAST = (datetime.now(timezone.utc) - timedelta(days=1)).isoformat()
+FUTURE = (datetime.now(UTC) + timedelta(days=1)).isoformat()
+PAST = (datetime.now(UTC) - timedelta(days=1)).isoformat()
 
 
 async def _create_provider_with_profile(client, email="jane@example.com", categories=None):
@@ -50,7 +50,12 @@ async def test_create_booking_without_token_returns_401(client):
     profile, _ = await _create_provider_with_profile(client)
     response = await client.post(
         "/v1/bookings/",
-        json={"provider_profile_id": profile["id"], "category": "hair", "visit_type": "shop_visit", "scheduled_at": FUTURE},
+        json={
+            "provider_profile_id": profile["id"],
+            "category": "hair",
+            "visit_type": "shop_visit",
+            "scheduled_at": FUTURE,
+        },
     )
     assert response.status_code == 401
 
@@ -63,7 +68,12 @@ async def test_create_booking_for_unoffered_category_returns_400(client):
 
     response = await client.post(
         "/v1/bookings/",
-        json={"provider_profile_id": profile["id"], "category": "nails", "visit_type": "shop_visit", "scheduled_at": FUTURE},
+        json={
+            "provider_profile_id": profile["id"],
+            "category": "nails",
+            "visit_type": "shop_visit",
+            "scheduled_at": FUTURE,
+        },
         headers=customer_headers,
     )
     assert response.status_code == 400
@@ -104,7 +114,12 @@ async def test_create_booking_in_the_past_returns_400(client):
     customer_headers = await _create_customer_headers(client)
     response = await client.post(
         "/v1/bookings/",
-        json={"provider_profile_id": profile["id"], "category": "hair", "visit_type": "shop_visit", "scheduled_at": PAST},
+        json={
+            "provider_profile_id": profile["id"],
+            "category": "hair",
+            "visit_type": "shop_visit",
+            "scheduled_at": PAST,
+        },
         headers=customer_headers,
     )
     assert response.status_code == 400
@@ -115,7 +130,12 @@ async def test_create_house_call_booking_without_address_returns_422(client):
     customer_headers = await _create_customer_headers(client)
     response = await client.post(
         "/v1/bookings/",
-        json={"provider_profile_id": profile["id"], "category": "hair", "visit_type": "house_call", "scheduled_at": FUTURE},
+        json={
+            "provider_profile_id": profile["id"],
+            "category": "hair",
+            "visit_type": "house_call",
+            "scheduled_at": FUTURE,
+        },
         headers=customer_headers,
     )
     assert response.status_code == 422
@@ -145,7 +165,12 @@ async def test_get_booking_visible_to_customer_and_provider_not_to_stranger(clie
     booking = (
         await client.post(
             "/v1/bookings/",
-            json={"provider_profile_id": profile["id"], "category": "hair", "visit_type": "shop_visit", "scheduled_at": FUTURE},
+            json={
+            "provider_profile_id": profile["id"],
+            "category": "hair",
+            "visit_type": "shop_visit",
+            "scheduled_at": FUTURE,
+        },
             headers=customer_headers,
         )
     ).json()
@@ -185,12 +210,22 @@ async def test_list_as_customer_returns_only_own_bookings(client):
 
     await client.post(
         "/v1/bookings/",
-        json={"provider_profile_id": profile["id"], "category": "hair", "visit_type": "shop_visit", "scheduled_at": FUTURE},
+        json={
+            "provider_profile_id": profile["id"],
+            "category": "hair",
+            "visit_type": "shop_visit",
+            "scheduled_at": FUTURE,
+        },
         headers=customer_headers,
     )
     await client.post(
         "/v1/bookings/",
-        json={"provider_profile_id": profile["id"], "category": "hair", "visit_type": "shop_visit", "scheduled_at": FUTURE},
+        json={
+            "provider_profile_id": profile["id"],
+            "category": "hair",
+            "visit_type": "shop_visit",
+            "scheduled_at": FUTURE,
+        },
         headers=other_customer_headers,
     )
 
@@ -218,7 +253,12 @@ async def test_provider_can_confirm_then_complete_booking(client):
     booking = (
         await client.post(
             "/v1/bookings/",
-            json={"provider_profile_id": profile["id"], "category": "hair", "visit_type": "shop_visit", "scheduled_at": FUTURE},
+            json={
+            "provider_profile_id": profile["id"],
+            "category": "hair",
+            "visit_type": "shop_visit",
+            "scheduled_at": FUTURE,
+        },
             headers=customer_headers,
         )
     ).json()
@@ -242,7 +282,12 @@ async def test_customer_cannot_confirm_booking(client):
     booking = (
         await client.post(
             "/v1/bookings/",
-            json={"provider_profile_id": profile["id"], "category": "hair", "visit_type": "shop_visit", "scheduled_at": FUTURE},
+            json={
+            "provider_profile_id": profile["id"],
+            "category": "hair",
+            "visit_type": "shop_visit",
+            "scheduled_at": FUTURE,
+        },
             headers=customer_headers,
         )
     ).json()
@@ -259,7 +304,12 @@ async def test_cannot_complete_a_booking_that_was_never_confirmed(client):
     booking = (
         await client.post(
             "/v1/bookings/",
-            json={"provider_profile_id": profile["id"], "category": "hair", "visit_type": "shop_visit", "scheduled_at": FUTURE},
+            json={
+            "provider_profile_id": profile["id"],
+            "category": "hair",
+            "visit_type": "shop_visit",
+            "scheduled_at": FUTURE,
+        },
             headers=customer_headers,
         )
     ).json()
@@ -276,7 +326,12 @@ async def test_customer_can_cancel_a_requested_booking(client):
     booking = (
         await client.post(
             "/v1/bookings/",
-            json={"provider_profile_id": profile["id"], "category": "hair", "visit_type": "shop_visit", "scheduled_at": FUTURE},
+            json={
+            "provider_profile_id": profile["id"],
+            "category": "hair",
+            "visit_type": "shop_visit",
+            "scheduled_at": FUTURE,
+        },
             headers=customer_headers,
         )
     ).json()
@@ -294,7 +349,12 @@ async def test_cannot_change_status_of_a_cancelled_booking(client):
     booking = (
         await client.post(
             "/v1/bookings/",
-            json={"provider_profile_id": profile["id"], "category": "hair", "visit_type": "shop_visit", "scheduled_at": FUTURE},
+            json={
+            "provider_profile_id": profile["id"],
+            "category": "hair",
+            "visit_type": "shop_visit",
+            "scheduled_at": FUTURE,
+        },
             headers=customer_headers,
         )
     ).json()
@@ -312,7 +372,12 @@ async def test_stranger_cannot_update_booking_status(client):
     booking = (
         await client.post(
             "/v1/bookings/",
-            json={"provider_profile_id": profile["id"], "category": "hair", "visit_type": "shop_visit", "scheduled_at": FUTURE},
+            json={
+            "provider_profile_id": profile["id"],
+            "category": "hair",
+            "visit_type": "shop_visit",
+            "scheduled_at": FUTURE,
+        },
             headers=customer_headers,
         )
     ).json()

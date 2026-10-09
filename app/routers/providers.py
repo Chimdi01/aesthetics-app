@@ -27,7 +27,11 @@ from app.database import get_db
 from app.models.provider_profile import ProviderProfile, ServiceCategory
 from app.models.review import Review
 from app.models.user import User
-from app.schemas.provider_profile import ProviderProfileCreate, ProviderProfilePublic, ProviderSearchResult
+from app.schemas.provider_profile import (
+    ProviderProfileCreate,
+    ProviderProfilePublic,
+    ProviderSearchResult,
+)
 from app.security import get_current_provider
 
 logger = logging.getLogger(__name__)
@@ -66,7 +70,12 @@ async def create_provider_profile(
     db.add(profile)
     await db.commit()
     await db.refresh(profile)
-    logger.info("Provider profile created: %s (user=%s, categories=%s)", profile.id, current_user.id, [c.value for c in profile.categories])
+    logger.info(
+        "Provider profile created: %s (user=%s, categories=%s)",
+        profile.id,
+        current_user.id,
+        [c.value for c in profile.categories],
+    )
     return profile
 
 
@@ -107,7 +116,12 @@ async def search_providers(
         .offset(offset)
     )
     if category is not None:
-        stmt = stmt.where(ProviderProfile.categories.any(category))
+        # The trailing type: ignore is for mypy: SQLAlchemy's stubs for
+        # ARRAY(Enum).any() don't model a bare enum member as an accepted
+        # argument (they want something shaped like a ColumnElement); the
+        # query itself is correct and exercised by
+        # tests/regression/test_provider_search.py.
+        stmt = stmt.where(ProviderProfile.categories.any(category))  # type: ignore[arg-type]
 
     rows = (await db.execute(stmt)).all()
     # Exact search origin isn't logged above DEBUG — for a home provider

@@ -8,6 +8,7 @@ WARNING/ERROR regardless of path, and an authorization failure is logged
 rather than disappearing silently into just an HTTP 403.
 """
 import logging
+from datetime import UTC
 
 from tests.conftest import login, register_user
 
@@ -62,7 +63,7 @@ async def test_authorization_denial_is_logged_at_warning(client, caplog):
 
     await register_user(client, "customer@example.com", password="secret123", role="customer")
     customer_token = await login(client, "customer@example.com", "secret123")
-    from datetime import datetime, timedelta, timezone
+    from datetime import datetime, timedelta
 
     booking = (
         await client.post(
@@ -71,7 +72,7 @@ async def test_authorization_denial_is_logged_at_warning(client, caplog):
                 "provider_profile_id": profile["id"],
                 "category": "hair",
                 "visit_type": "shop_visit",
-                "scheduled_at": (datetime.now(timezone.utc) + timedelta(days=1)).isoformat(),
+                "scheduled_at": (datetime.now(UTC) + timedelta(days=1)).isoformat(),
             },
             headers={"Authorization": f"Bearer {customer_token}"},
         )

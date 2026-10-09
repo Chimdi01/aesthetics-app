@@ -1,10 +1,10 @@
-from datetime import datetime, timedelta, timezone
+from datetime import UTC, datetime, timedelta
 
 from sqlalchemy import text
 
 from tests.conftest import login, register_user, test_engine
 
-FUTURE = (datetime.now(timezone.utc) + timedelta(days=1)).isoformat()
+FUTURE = (datetime.now(UTC) + timedelta(days=1)).isoformat()
 
 
 async def _create_user(client, email, role="customer"):
@@ -57,7 +57,7 @@ async def test_report_a_provider(client):
 async def test_report_a_customer(client):
     # The point of the redesign: a provider can report a customer too,
     # not just the other way around.
-    provider_user, provider_headers = await _create_user(client, "jane2@example.com", role="provider")
+    _, provider_headers = await _create_user(client, "jane2@example.com", role="provider")
     await _create_provider_profile(client, provider_headers)
     customer_user, _ = await _create_user(client, "badcust@example.com")
 

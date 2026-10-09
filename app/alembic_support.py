@@ -14,6 +14,4 @@ def include_object(object, name, type_, reflected, compare_to):
     treats them as "should be dropped". This skips any reflected table
     that has no counterpart in our own models, so migrations only ever
     touch tables we actually defined."""
-    if type_ == "table" and reflected and compare_to is None:
-        return False
-    return True
+    return not (type_ == "table" and reflected and compare_to is None)

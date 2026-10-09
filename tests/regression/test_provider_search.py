@@ -1,8 +1,8 @@
-from datetime import datetime, timedelta, timezone
+from datetime import UTC, datetime, timedelta
 
 from tests.conftest import login, register_user
 
-FUTURE = (datetime.now(timezone.utc) + timedelta(days=1)).isoformat()
+FUTURE = (datetime.now(UTC) + timedelta(days=1)).isoformat()
 
 # Search origin: central London.
 ORIGIN = {"latitude": 51.5074, "longitude": -0.1278}
@@ -122,7 +122,9 @@ async def test_search_includes_average_rating_and_review_count(client):
             )
         ).json()
         for status in ("confirmed", "completed"):
-            await client.patch(f"/v1/bookings/{booking['id']}/status", json={"status": status}, headers=provider_headers)
+            await client.patch(
+                f"/v1/bookings/{booking['id']}/status", json={"status": status}, headers=provider_headers
+            )
         await client.post(f"/v1/bookings/{booking['id']}/review", json={"rating": rating}, headers=customer_headers)
 
     results = (await client.get("/v1/providers/search", params={**ORIGIN, "radius_km": 20})).json()

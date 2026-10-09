@@ -60,7 +60,13 @@ app.add_middleware(GZipMiddleware, minimum_size=500)
 # middleware applies `default_limits` to every route that doesn't
 # override it with its own @limiter.limit(...).
 app.state.limiter = limiter
-app.add_exception_handler(RateLimitExceeded, _rate_limit_exceeded_handler)
+# The trailing type: ignore is for mypy: slowapi's handler is typed as
+# (Request, RateLimitExceeded) -> Response, narrower than Starlette's
+# (Request, Exception) -> Response signature. Starlette dispatches by the
+# registered exception CLASS at runtime, not by the handler's declared
+# argument type, so this is a stub mismatch between the two libraries, not
+# a real bug.
+app.add_exception_handler(RateLimitExceeded, _rate_limit_exceeded_handler)  # type: ignore[arg-type]
 app.add_middleware(SlowAPIMiddleware)
 
 
@@ -180,5 +186,9 @@ async def readiness_check():
             await conn.execute(text("SELECT 1"))
     except Exception:
         logger.exception("Readiness check failed: database unreachable")
-        raise HTTPException(status_code=503, detail="Database unreachable")
+        # from None: the real exception is already captured above by
+        # logger.exception (full traceback, server-side only) — chaining
+        # it onto the client-facing HTTPException too would be redundant,
+        # not additionally informative.
+        raise HTTPException(status_code=503, detail="Database unreachable") from None
     return {"status": "ok", "database": "ok"}

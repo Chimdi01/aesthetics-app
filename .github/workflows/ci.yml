@@ -1,12 +1,17 @@
-# Runs on every push/PR so "152 tests pass" is a guarantee checked on
+# Runs on every push/PR so "all tests pass" is a guarantee checked on
 # every change, not just a claim from whenever someone last ran them
-# locally. Two independent jobs: `test` (migrations apply cleanly, then
+# locally. Four independent jobs: `test` (migrations apply cleanly, then
 # the full unit+regression suite against a real Postgres+PostGIS service
-# container — the same image docker-compose.yml uses locally) and
-# `dependency-audit` (checks the exact pinned versions in requirements.txt
-# against known CVEs). They're separate jobs, not steps in one job, so a
-# new CVE disclosure on an existing pinned dependency shows up as its own
-# failing check rather than being buried inside (or blocking) the test run.
+# container — the same image docker-compose.yml uses locally), `lint`
+# (ruff + mypy — no DB needed, so it's its own fast job rather than a step
+# tacked onto `test`), `secrets-scan` (gitleaks against the full commit
+# history, not just the current tree — catches a secret that was
+# committed and later removed, which a working-tree-only scan would miss),
+# and `dependency-audit` (checks the exact pinned versions in
+# requirements.txt against known CVEs). They're separate jobs, not steps
+# in one job, so e.g. a new CVE disclosure on an existing pinned
+# dependency shows up as its own failing check rather than being buried
+# inside (or blocking) the test run.
 name: CI
 
 on:
@@ -59,6 +64,51 @@ jobs:
 
       - name: Run tests
         run: python -m pytest -q
+
+  lint:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+          cache: "pip"
+
+      - name: Install dependencies
+        run: pip install -r requirements-dev.txt
+
+      - name: Ruff (lint)
+        run: ruff check app/ tests/
+
+      - name: mypy (type-check)
+        run: mypy app/
+
+  secrets-scan:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          # Full history, not GitHub's default shallow (depth-1) clone —
+          # gitleaks walks past commits too, not just the current tree, so
+          # a secret that was committed and later deleted would still be
+          # caught (it's still sitting in history, reachable by anyone who
+          # clones the repo).
+          fetch-depth: 0
+
+      - name: Install gitleaks
+        # Installed directly from the upstream release binary rather than
+        # the gitleaks-action marketplace action — gitleaks itself (the CLI
+        # tool used here) is MIT-licensed/free either way, but the wrapper
+        # action gates private-repo usage behind a separate commercial
+        # license. Running the plain binary avoids that entirely.
+        run: |
+          curl -sSL -o gitleaks.tar.gz https://github.com/gitleaks/gitleaks/releases/download/v8.30.1/gitleaks_8.30.1_linux_x64.tar.gz
+          tar -xzf gitleaks.tar.gz gitleaks
+          sudo mv gitleaks /usr/local/bin/gitleaks
+
+      - name: Scan full history for committed secrets
+        run: gitleaks detect --source . --log-opts="--all" --redact
 
   dependency-audit:
     runs-on: ubuntu-latest

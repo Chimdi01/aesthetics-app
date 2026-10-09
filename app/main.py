@@ -125,6 +125,25 @@ async def cache_immutable_media(request: Request, call_next):
         response.headers["Cache-Control"] = "public, max-age=31536000, immutable"
     return response
 
+
+@app.middleware("http")
+async def add_security_headers(request: Request, call_next):
+    """Baseline hardening headers, applied to every response. No
+    Content-Security-Policy here, deliberately: a CSP strict enough to
+    mean anything would need real tuning to not break /docs's Swagger UI
+    (it loads its JS/CSS from a CDN), and the actual exploitability of
+    missing CSP on a pure JSON API is low — there's no page here
+    rendering user-controlled content as HTML for an XSS payload to run
+    in. Revisit if/when a web frontend served by this app exists."""
+    response = await call_next(request)
+    response.headers["X-Content-Type-Options"] = "nosniff"
+    response.headers["X-Frame-Options"] = "DENY"
+    # Safe to send unconditionally: a browser that receives this over
+    # plain HTTP (e.g. local dev) just ignores it per spec — HSTS only
+    # takes effect on a response actually delivered over HTTPS.
+    response.headers["Strict-Transport-Security"] = "max-age=31536000; includeSubDomains"
+    return response
+
 # Every feature router is assembled under /v1 in app/routers/v1.py — see
 # that file for why (URL-path versioning) and for the route-ordering
 # notes that still apply within it (/search vs /{profile_id}, /as-customer

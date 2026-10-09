@@ -40,6 +40,11 @@ async def test_create_user_normalizes_email_and_catches_case_variant_duplicates(
     assert duplicate.status_code == 409
 
 
+async def test_create_user_rejects_password_under_eight_characters(client):
+    response = await register_user(client, "jane@example.com", password="short")
+    assert response.status_code == 422
+
+
 async def test_get_user_by_id_without_token_returns_401(client):
     created = (await register_user(client, "jane@example.com")).json()
     response = await client.get(f"/v1/users/{created['id']}")

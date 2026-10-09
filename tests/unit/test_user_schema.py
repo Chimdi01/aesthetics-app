@@ -28,3 +28,13 @@ def test_user_create_rejects_admin_role():
 def test_user_create_normalizes_email_to_lowercase():
     user = UserCreate(email="User@Example.com", password="secret123", full_name="A")
     assert user.email == "user@example.com"
+
+
+def test_user_create_accepts_password_at_minimum_length():
+    user = UserCreate(email="a@example.com", password="12345678", full_name="A")
+    assert user.password == "12345678"
+
+
+def test_user_create_rejects_password_under_minimum_length():
+    with pytest.raises(ValidationError):
+        UserCreate(email="a@example.com", password="1234567", full_name="A")

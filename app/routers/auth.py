@@ -32,10 +32,17 @@ async def login(
     request: Request, form_data: OAuth2PasswordRequestForm = Depends(), db: AsyncSession = Depends(get_db)
 ):
     # form_data.username bypasses UserCreate's normalize_email_case (it's
-    # a raw OAuth2 form field, not validated through our schema) — lower
-    # it here too, or a user who signed up with capitals in their email
-    # gets a false "incorrect email or password" typing it in lowercase.
-    normalized_email = form_data.username.lower()
+    # a raw OAuth2 form field, not validated through EmailStr the way
+    # signup is) — lower it here too, or a user who signed up with
+    # capitals in their email gets a false "incorrect email or password"
+    # typing it in lowercase. isprintable() strips control characters
+    # (newlines, carriage returns, etc.) for the same reason: nothing
+    # containing one could ever match a real EmailStr-validated stored
+    # email anyway, but leaving them in would let a crafted "username"
+    # forge fake lines in a file-based log via the warning below
+    # (CWE-117 — log injection isn't just a theoretical category item,
+    # this field was a real path into it until this filter).
+    normalized_email = "".join(ch for ch in form_data.username.lower() if ch.isprintable())
     result = await db.execute(select(User).where(User.email == normalized_email))
     user = result.scalar_one_or_none()
 

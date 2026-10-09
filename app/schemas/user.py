@@ -11,14 +11,21 @@ keeping them separate means:
 import uuid
 from datetime import datetime
 
-from pydantic import BaseModel, EmailStr, ConfigDict, field_validator
+from pydantic import BaseModel, EmailStr, ConfigDict, Field, field_validator
 
 from app.models.user import UserRole
 
 
 class UserCreate(BaseModel):
     email: EmailStr
-    password: str  # plain text in the request; we hash it before saving
+    # min_length=8, no complexity rules (no "must contain a symbol" etc.)
+    # — current NIST guidance (SP 800-63B) is that length matters far
+    # more than enforced complexity, and complexity rules mostly just
+    # push people toward predictable substitutions. No max_length either:
+    # bcrypt's 72-byte input limit is already handled in app/security.py
+    # (see the passlib/bcrypt pinning gotcha in CLAUDE.md), so a long
+    # password doesn't need rejecting here, just hashing correctly.
+    password: str = Field(min_length=8)  # plain text in the request; we hash it before saving
     full_name: str
     role: UserRole = UserRole.customer
 

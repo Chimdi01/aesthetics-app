@@ -94,6 +94,13 @@ class Settings(BaseSettings):
     # "console" here would mean verification/reset links never actually
     # reach a real user.
     email_backend: str = "console"
+    # app/sms.py's swap point — same reasoning/posture as email_backend
+    # above, no SMS-provider account exists yet either.
+    sms_backend: str = "console"
+    # app/push.py's swap point — no FCM/APNs account exists yet either,
+    # and (unlike email/SMS) no mobile app exists to generate a real
+    # device token regardless of backend — see that module's docstring.
+    push_backend: str = "console"
     # Where email-verification and password-reset links point — the
     # frontend route that takes the token from the URL and calls the
     # corresponding API endpoint. No frontend exists yet (see CLAUDE.md),

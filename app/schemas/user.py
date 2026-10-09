@@ -8,12 +8,20 @@ keeping them separate means:
   - UserPublic can OMIT hashed_password entirely, so there's no risk of
     ever accidentally returning it in an API response.
 """
+import re
 import uuid
 from datetime import datetime
 
 from pydantic import BaseModel, ConfigDict, EmailStr, Field, field_validator
 
 from app.models.user import UserRole
+
+# E.164: a leading "+", then 1-15 digits, the first of which can't be 0.
+# Not validating "is this a real, reachable number" (that needs an SMS
+# provider's own lookup API, not a regex) — just rejecting obvious
+# garbage input before it's stored, let alone handed to a real SMS
+# provider later.
+_E164_PATTERN = re.compile(r"^\+[1-9]\d{6,14}$")
 
 
 class UserCreate(BaseModel):
@@ -63,6 +71,9 @@ class UserPublic(BaseModel):
     role: UserRole
     is_active: bool
     email_verified: bool
+    # Same visibility reasoning as email: PII, not shown to strangers
+    # via UserSummary below.
+    phone_number: str | None
     created_at: datetime
 
 
@@ -86,3 +97,16 @@ class UserStatusUpdate(BaseModel):
     an account always starts active."""
 
     is_active: bool
+
+
+class PhoneNumberUpdate(BaseModel):
+    # None clears it — a user who added a number and wants SMS off again
+    # shouldn't need a separate "remove my phone number" endpoint.
+    phone_number: str | None
+
+    @field_validator("phone_number")
+    @classmethod
+    def validate_e164_format(cls, value: str | None) -> str | None:
+        if value is not None and not _E164_PATTERN.match(value):
+            raise ValueError("phone_number must be in E.164 format, e.g. +14155552671")
+        return value

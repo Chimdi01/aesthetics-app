@@ -26,11 +26,12 @@ from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.booking_access import authorize_booking_party
+from app.booking_access import authorize_booking_party, get_owning_provider_profile
 from app.database import get_db
 from app.models.booking import Booking, BookingStatus
 from app.models.provider_profile import ProviderProfile
 from app.models.user import User
+from app.notifications import notify_booking_status_changed
 from app.schemas.booking import BookingCreate, BookingPublic, BookingStatusUpdate
 from app.security import get_current_provider, get_current_user
 
@@ -138,7 +139,7 @@ async def update_booking_status(
     if not booking:
         raise HTTPException(status_code=404, detail="Booking not found")
 
-    _, is_provider = await authorize_booking_party(db, booking, current_user)
+    is_customer, is_provider = await authorize_booking_party(db, booking, current_user)
 
     if booking.status in (BookingStatus.completed, BookingStatus.cancelled):
         raise HTTPException(
@@ -169,4 +170,17 @@ async def update_booking_status(
         "Booking %s status changed: %s -> %s (by user=%s)",
         booking.id, previous_status.value, new_status.value, current_user.id,
     )
+
+    # Notify the OTHER party — whoever didn't make this change.
+    try:
+        if is_customer:
+            provider_profile = await get_owning_provider_profile(db, booking)
+            recipient = await db.get(User, provider_profile.user_id)
+        else:
+            recipient = await db.get(User, booking.customer_id)
+        if recipient is not None:
+            await notify_booking_status_changed(db, recipient, new_status.value)
+    except Exception:
+        logger.exception("Failed to send booking-status-changed notification for booking %s", booking.id)
+
     return booking

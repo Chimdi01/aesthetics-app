@@ -20,6 +20,7 @@ from app.models.identity_verification import IdentityVerification, VerificationS
 from app.models.provider_profile import ProviderProfile
 from app.models.report import Report, ReportStatus
 from app.models.user import User
+from app.notifications import notify_report_decision, notify_verification_decision
 from app.refresh_tokens import revoke_all_refresh_tokens_platform_wide
 from app.schemas.auth import RevokeAllSessionsRequest, RevokeAllSessionsResponse
 from app.schemas.identity_verification import (
@@ -97,6 +98,19 @@ async def review_verification(
         "Verification %s reviewed: user=%s, status=%s, reviewed_by=%s",
         verification.id, verification.user_id, payload.status.value, current_admin.id,
     )
+
+    try:
+        submitter = await db.get(User, verification.user_id)
+        if submitter is not None:
+            await notify_verification_decision(
+                db,
+                submitter,
+                approved=payload.status == VerificationStatus.approved,
+                rejection_reason=verification.rejection_reason,
+            )
+    except Exception:
+        logger.exception("Failed to send verification-decision notification for verification %s", verification.id)
+
     return verification
 
 
@@ -141,6 +155,14 @@ async def review_report(
         "Report %s reviewed: reported_user=%s, status=%s, resolved_by=%s",
         report.id, report.reported_user_id, payload.status.value, current_admin.id,
     )
+
+    try:
+        reporter = await db.get(User, report.reporter_id)
+        if reporter is not None:
+            await notify_report_decision(db, reporter, payload.status.value)
+    except Exception:
+        logger.exception("Failed to send report-decision notification for report %s", report.id)
+
     return report
 
 

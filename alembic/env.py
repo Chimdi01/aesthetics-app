@@ -11,9 +11,11 @@ from app.config import settings
 from app.database import Base
 from app.models import (  # noqa: F401  (import so Base knows about the tables)
     booking,
+    device_token,
     email_token,
     identity_verification,
     message,
+    notification_preference,
     portfolio_media,
     provider_availability,
     provider_profile,

@@ -24,6 +24,7 @@ from app.models.booking import Booking, BookingStatus
 from app.models.provider_profile import ProviderProfile
 from app.models.review import Review
 from app.models.user import User
+from app.notifications import notify_new_review
 from app.schemas.review import ReviewCreate, ReviewPublic
 from app.security import get_current_user
 
@@ -65,6 +66,16 @@ async def create_review(
     await db.commit()
     await db.refresh(review)
     logger.info("Review created: %s (booking=%s, rating=%d)", review.id, booking.id, review.rating)
+
+    try:
+        provider_profile = await db.get(ProviderProfile, booking.provider_profile_id)
+        if provider_profile is not None:
+            recipient = await db.get(User, provider_profile.user_id)
+            if recipient is not None:
+                await notify_new_review(db, recipient, review.rating)
+    except Exception:
+        logger.exception("Failed to send new-review notification for review %s", review.id)
+
     return review
 
 

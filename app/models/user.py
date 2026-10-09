@@ -63,6 +63,13 @@ class User(Base):
     # account itself regardless of which IP they came from.
     failed_login_attempts: Mapped[int] = mapped_column(Integer, server_default="0", nullable=False)
     login_locked_until: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    # Optional, added via PATCH /v1/users/me/phone-number — not
+    # collected at signup, not verified (same "tracked, not enforced"
+    # posture as email_verified above). app/notifications.py only sends
+    # an SMS when this is set; a user who never adds one just gets email
+    # notifications. No uniqueness constraint — unlike email, nothing in
+    # this app treats a phone number as an account identifier.
+    phone_number: Mapped[str | None] = mapped_column(String(20), nullable=True)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
 
     # Same circular-import-avoidance forward reference as the "User"

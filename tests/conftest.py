@@ -31,9 +31,11 @@ from app.database import Base, get_db
 from app.main import app
 from app.models import (  # noqa: F401  (import so Base knows about the tables)
     booking,
+    device_token,
     email_token,
     identity_verification,
     message,
+    notification_preference,
     portfolio_media,
     provider_availability,
     provider_profile,
@@ -98,14 +100,15 @@ async def _clean_tables():
     """Runs before every test so one test's data can't leak into the
     next. TRUNCATE ... CASCADE clears reports, identity_verifications,
     messages, provider_availability, portfolio_media, reviews, bookings,
-    refresh_tokens, email_tokens, provider_profiles and users in one
-    statement regardless of the FKs between them."""
+    refresh_tokens, email_tokens, notification_preferences,
+    device_tokens, provider_profiles and users in one statement
+    regardless of the FKs between them."""
     async with test_engine.begin() as conn:
         await conn.execute(
             text(
                 "TRUNCATE TABLE reports, identity_verifications, messages, provider_availability, "
-                "portfolio_media, reviews, bookings, refresh_tokens, email_tokens, provider_profiles, users "
-                "RESTART IDENTITY CASCADE"
+                "portfolio_media, reviews, bookings, refresh_tokens, email_tokens, notification_preferences, "
+                "device_tokens, provider_profiles, users RESTART IDENTITY CASCADE"
             )
         )
     yield

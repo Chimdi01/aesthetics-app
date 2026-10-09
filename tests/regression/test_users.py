@@ -97,3 +97,107 @@ async def test_get_user_by_id_not_found_returns_404(client):
         "/v1/users/00000000-0000-0000-0000-000000000000", headers={"Authorization": f"Bearer {token}"}
     )
     assert response.status_code == 404
+
+
+# --- phone number (PATCH /v1/users/me/phone-number) ---
+
+
+async def test_new_signup_has_no_phone_number(client):
+    created = (await register_user(client, "jane@example.com")).json()
+    assert created["phone_number"] is None
+
+
+async def test_update_my_phone_number(client):
+    created = (await register_user(client, "jane@example.com")).json()
+    token = await login(client, "jane@example.com")
+    headers = {"Authorization": f"Bearer {token}"}
+
+    response = await client.patch(
+        "/v1/users/me/phone-number", json={"phone_number": "+14155552671"}, headers=headers
+    )
+    assert response.status_code == 200
+    assert response.json()["phone_number"] == "+14155552671"
+
+    # Persisted, not just echoed back.
+    fetched = await client.get(f"/v1/users/{created['id']}", headers=headers)
+    assert fetched.json()["phone_number"] == "+14155552671"
+
+
+async def test_update_my_phone_number_rejects_invalid_format(client):
+    await register_user(client, "badphone@example.com")
+    token = await login(client, "badphone@example.com")
+    response = await client.patch(
+        "/v1/users/me/phone-number",
+        json={"phone_number": "not-a-number"},
+        headers={"Authorization": f"Bearer {token}"},
+    )
+    assert response.status_code == 422
+
+
+async def test_clear_my_phone_number(client):
+    await register_user(client, "clearme@example.com")
+    token = await login(client, "clearme@example.com")
+    headers = {"Authorization": f"Bearer {token}"}
+    await client.patch("/v1/users/me/phone-number", json={"phone_number": "+14155552671"}, headers=headers)
+
+    response = await client.patch("/v1/users/me/phone-number", json={"phone_number": None}, headers=headers)
+    assert response.status_code == 200
+    assert response.json()["phone_number"] is None
+
+
+async def test_update_my_phone_number_without_token_returns_401(client):
+    response = await client.patch("/v1/users/me/phone-number", json={"phone_number": "+14155552671"})
+    assert response.status_code == 401
+
+
+# --- notification preferences (GET/PATCH /v1/users/me/notification-preferences) ---
+
+
+async def test_new_signup_gets_default_notification_preferences(client):
+    await register_user(client, "defaults@example.com")
+    token = await login(client, "defaults@example.com")
+    response = await client.get(
+        "/v1/users/me/notification-preferences", headers={"Authorization": f"Bearer {token}"}
+    )
+    assert response.status_code == 200
+    body = response.json()
+    assert body["notify_on_new_message"] is True
+    assert body["message_frequency"] == "every_message"
+    assert body["notify_on_booking_status_change"] is True
+    assert body["notify_on_new_review"] is True
+    assert body["notify_on_verification_decision"] is True
+    assert body["notify_on_report_decision"] is True
+
+
+async def test_update_notification_preferences_is_a_partial_patch(client):
+    await register_user(client, "partial@example.com")
+    token = await login(client, "partial@example.com")
+    headers = {"Authorization": f"Bearer {token}"}
+
+    response = await client.patch(
+        "/v1/users/me/notification-preferences", json={"notify_on_new_message": False}, headers=headers
+    )
+    assert response.status_code == 200
+    body = response.json()
+    assert body["notify_on_new_message"] is False
+    # Untouched fields keep their default — a partial update must not
+    # reset everything else to some blank state.
+    assert body["notify_on_new_review"] is True
+    assert body["message_frequency"] == "every_message"
+
+
+async def test_update_notification_preferences_message_frequency(client):
+    await register_user(client, "frequency@example.com")
+    token = await login(client, "frequency@example.com")
+    response = await client.patch(
+        "/v1/users/me/notification-preferences",
+        json={"message_frequency": "first_message_only"},
+        headers={"Authorization": f"Bearer {token}"},
+    )
+    assert response.status_code == 200
+    assert response.json()["message_frequency"] == "first_message_only"
+
+
+async def test_notification_preferences_without_token_returns_401(client):
+    response = await client.get("/v1/users/me/notification-preferences")
+    assert response.status_code == 401

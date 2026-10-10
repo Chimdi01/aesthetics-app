@@ -15,13 +15,16 @@ from fastapi import APIRouter, Depends, HTTPException, Query, Response
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.audit_log import record_audit_log
 from app.database import get_db
+from app.models.audit_log import AuditAction, AuditLog, AuditTargetType
 from app.models.identity_verification import IdentityVerification, VerificationStatus
 from app.models.provider_profile import ProviderProfile
 from app.models.report import Report, ReportStatus
 from app.models.user import User
 from app.notifications import notify_report_decision, notify_verification_decision
 from app.refresh_tokens import revoke_all_refresh_tokens_platform_wide
+from app.schemas.audit_log import AuditLogPublic
 from app.schemas.auth import RevokeAllSessionsRequest, RevokeAllSessionsResponse
 from app.schemas.identity_verification import (
     VerificationAdminPublic,
@@ -92,6 +95,14 @@ async def review_verification(
     verification.rejection_reason = payload.rejection_reason if payload.status == VerificationStatus.rejected else None
     verification.reviewed_by = current_admin.id
     verification.reviewed_at = datetime.now(UTC)
+    record_audit_log(
+        db,
+        current_admin.id,
+        AuditAction.verification_reviewed,
+        AuditTargetType.identity_verification,
+        verification.id,
+        {"status": payload.status.value, "submitter_user_id": str(verification.user_id)},
+    )
     await db.commit()
     await db.refresh(verification)
     logger.info(
@@ -149,6 +160,14 @@ async def review_report(
     report.status = payload.status
     report.resolved_by = current_admin.id
     report.resolved_at = datetime.now(UTC)
+    record_audit_log(
+        db,
+        current_admin.id,
+        AuditAction.report_reviewed,
+        AuditTargetType.report,
+        report.id,
+        {"status": payload.status.value, "reported_user_id": str(report.reported_user_id)},
+    )
     await db.commit()
     await db.refresh(report)
     logger.info(
@@ -193,12 +212,22 @@ async def set_user_active_status(
         raise HTTPException(status_code=404, detail="User not found")
 
     user.is_active = payload.is_active
+    cascaded_provider_profile = False
     if not payload.is_active:
         result = await db.execute(select(ProviderProfile).where(ProviderProfile.user_id == user_id))
         provider_profile = result.scalar_one_or_none()
         if provider_profile is not None:
             provider_profile.is_active = False
+            cascaded_provider_profile = True
 
+    record_audit_log(
+        db,
+        current_admin.id,
+        AuditAction.user_status_changed,
+        AuditTargetType.user,
+        user_id,
+        {"is_active": payload.is_active, "cascaded_to_provider_profile": cascaded_provider_profile},
+    )
     await db.commit()
     await db.refresh(user)
     logger.info("User %s active status set to %s by admin=%s", user_id, payload.is_active, current_admin.id)
@@ -224,6 +253,14 @@ async def set_provider_active_status(
         raise HTTPException(status_code=404, detail="Provider profile not found")
 
     profile.is_active = payload.is_active
+    record_audit_log(
+        db,
+        current_admin.id,
+        AuditAction.provider_status_changed,
+        AuditTargetType.provider_profile,
+        profile_id,
+        {"is_active": payload.is_active},
+    )
     await db.commit()
     await db.refresh(profile)
     logger.info(
@@ -257,7 +294,46 @@ async def revoke_all_sessions(
         raise HTTPException(status_code=400, detail="Set confirm=true to revoke every session platform-wide")
 
     revoked_count = await revoke_all_refresh_tokens_platform_wide(db)
+    record_audit_log(
+        db,
+        current_admin.id,
+        AuditAction.sessions_revoked,
+        AuditTargetType.platform,
+        None,
+        {"revoked_count": revoked_count},
+    )
     await db.commit()
     logger.warning("Platform-wide session revocation triggered by admin=%s (%d sessions revoked)",
                     current_admin.id, revoked_count)
     return RevokeAllSessionsResponse(revoked_count=revoked_count)
+
+
+@router.get("/audit-log", response_model=list[AuditLogPublic])
+async def list_audit_log(
+    action: AuditAction | None = Query(default=None),
+    target_type: AuditTargetType | None = Query(default=None),
+    target_id: uuid.UUID | None = Query(default=None),
+    admin_id: uuid.UUID | None = Query(default=None),
+    db: AsyncSession = Depends(get_db),
+    current_admin: User = Depends(get_current_admin),
+    limit: int = Query(default=20, ge=1, le=100),
+    offset: int = Query(default=0, ge=0),
+):
+    """Every admin's own actions are visible to every admin here, not
+    just their own — this is an accountability record for the whole
+    moderation team, not a personal history. Same bounded
+    limit/offset pagination as every other list endpoint in this
+    codebase (reviews, portfolio, messages) — an unbounded SELECT here
+    would let a platform with enough history turn every page load into
+    an ever-growing query."""
+    stmt = select(AuditLog).order_by(AuditLog.created_at.desc()).limit(limit).offset(offset)
+    if action is not None:
+        stmt = stmt.where(AuditLog.action == action)
+    if target_type is not None:
+        stmt = stmt.where(AuditLog.target_type == target_type)
+    if target_id is not None:
+        stmt = stmt.where(AuditLog.target_id == target_id)
+    if admin_id is not None:
+        stmt = stmt.where(AuditLog.admin_id == admin_id)
+    result = await db.execute(stmt)
+    return result.scalars().all()

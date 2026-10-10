@@ -70,6 +70,17 @@ class User(Base):
     # notifications. No uniqueness constraint — unlike email, nothing in
     # this app treats a phone number as an account identifier.
     phone_number: Mapped[str | None] = mapped_column(String(20), nullable=True)
+    # 2FA (app/totp.py). totp_secret_encrypted is set as soon as
+    # enrollment starts (POST /v1/users/me/2fa/enroll) but
+    # totp_enabled stays False until the user proves they actually
+    # copied the secret into their authenticator app (POST
+    # /v1/users/me/2fa/confirm) — login only branches into the 2FA
+    # challenge once totp_enabled is True, so a half-finished
+    # enrollment never locks anyone out. Encrypted, not hashed — see
+    # app/totp_encryption.py's docstring for why (the app needs the
+    # real value back to compute a code, unlike a password).
+    totp_secret_encrypted: Mapped[str | None] = mapped_column(String(255), nullable=True)
+    totp_enabled: Mapped[bool] = mapped_column(Boolean, server_default="false", nullable=False)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
 
     # Same circular-import-avoidance forward reference as the "User"

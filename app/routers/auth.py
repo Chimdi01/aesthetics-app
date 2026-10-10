@@ -29,6 +29,7 @@ from app.database import get_db
 from app.email import send_email
 from app.email_tokens import get_valid_email_token, invalidate_pending_tokens, issue_email_token
 from app.login_lockout import is_locked_out, record_failed_login, record_successful_login
+from app.mfa_challenge import get_valid_mfa_challenge, issue_mfa_challenge
 from app.models.email_token import EmailTokenPurpose
 from app.models.user import User
 from app.rate_limit import limiter
@@ -37,15 +38,25 @@ from app.refresh_tokens import (
     issue_refresh_token,
     revoke_all_refresh_tokens_for_user,
 )
-from app.schemas.auth import ForgotPasswordRequest, RefreshRequest, ResetPasswordRequest, TokenPair, VerifyEmailRequest
+from app.schemas.auth import (
+    ForgotPasswordRequest,
+    MfaChallengeResponse,
+    RefreshRequest,
+    ResetPasswordRequest,
+    TokenPair,
+    Verify2FARequest,
+    VerifyEmailRequest,
+)
 from app.security import create_access_token, get_current_user, hash_password, verify_password
+from app.totp import verify_and_consume_backup_code, verify_totp_code
+from app.totp_encryption import decrypt_totp_secret
 
 logger = logging.getLogger(__name__)
 
 router = APIRouter(prefix="/auth", tags=["auth"])
 
 
-@router.post("/login", response_model=TokenPair)
+@router.post("/login", response_model=TokenPair | MfaChallengeResponse)
 # Tighter than the 200/minute global default — login is the one endpoint
 # where that default is nowhere near tight enough: credential stuffing
 # means many attempts against the SAME account, often from a rotating
@@ -107,11 +118,63 @@ async def login(
         logger.warning("Login rejected for deactivated account: %s", user.id)
         raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="This account has been deactivated")
 
+    # Password (and account-active) checks are done — the lockout
+    # counter resets here regardless of whether 2FA, below, then also
+    # succeeds: lockout exists to stop PASSWORD guessing specifically,
+    # and that part just succeeded. A wrong 2FA code afterward is a
+    # separate failure mode, rate-limited on its own (see verify_2fa).
     record_successful_login(user)
+
+    if user.totp_enabled:
+        mfa_token = issue_mfa_challenge(db, user.id)
+        await db.commit()
+        logger.info("Password accepted for user %s; awaiting 2FA code", user.id)
+        return MfaChallengeResponse(mfa_token=mfa_token)
+
     access_token = create_access_token(user.id)
     refresh_token = issue_refresh_token(db, user.id)
     await db.commit()
     logger.info("User %s logged in", user.id)
+    return TokenPair(access_token=access_token, refresh_token=refresh_token)
+
+
+@router.post("/login/verify-2fa", response_model=TokenPair)
+# Same tightness as /login itself — a 6-digit TOTP code is a much
+# smaller space than a password, so the code-guessing side of this
+# needs at least as much rate-limiting as the password side already
+# gets, not less.
+@limiter.limit("5/minute")
+async def verify_2fa(request: Request, payload: Verify2FARequest, db: AsyncSession = Depends(get_db)):
+    challenge = await get_valid_mfa_challenge(db, payload.mfa_token)
+    if challenge is None:
+        raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Invalid or expired login challenge")
+
+    user = await db.get(User, challenge.user_id)
+    if user is None or not user.is_active or not user.totp_enabled:
+        # Mirrors /refresh's own re-check of is_active — an account
+        # deactivated (or that's had 2FA disabled) in the few minutes
+        # between /login and this call shouldn't be able to complete it.
+        raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Invalid or expired login challenge")
+
+    code_valid = False
+    if user.totp_secret_encrypted is not None:
+        code_valid = verify_totp_code(decrypt_totp_secret(user.totp_secret_encrypted), payload.code)
+    if not code_valid:
+        # A backup code works here too — accepted as a fallback for "I
+        # don't have my device", not a lesser-checked alternative.
+        code_valid = await verify_and_consume_backup_code(db, user.id, payload.code)
+
+    if not code_valid:
+        logger.warning("Invalid 2FA code for user %s", user.id)
+        raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Invalid code")
+
+    # Single-use: the challenge is spent the moment a valid code clears
+    # it, whether or not the rest of this request somehow fails later.
+    challenge.used_at = datetime.now(UTC)
+    access_token = create_access_token(user.id)
+    refresh_token = issue_refresh_token(db, user.id)
+    await db.commit()
+    logger.info("User %s completed 2FA login", user.id)
     return TokenPair(access_token=access_token, refresh_token=refresh_token)
 
 

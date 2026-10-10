@@ -30,3 +30,10 @@ pillow==12.3.0
 # Only imported/used when SECRETS_BACKEND=vault; the default "env"
 # backend never touches this.
 hvac==2.4.0
+# TOTP 2FA (app/totp.py) and encrypting TOTP secrets at rest
+# (app/totp_encryption.py). cryptography was already an installed
+# transitive dependency (via hvac/passlib) — pinned explicitly now that
+# it's load-bearing for something security-critical, same reasoning as
+# greenlet/starlette above.
+pyotp==2.10.0
+cryptography==50.0.1

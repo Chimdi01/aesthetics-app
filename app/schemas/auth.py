@@ -14,6 +14,27 @@ class TokenPair(BaseModel):
     access_token: str
     refresh_token: str
     token_type: str = "bearer"
+    # Always False here — a real token pair, not a 2FA challenge. Fixed
+    # on both this and MfaChallengeResponse below so a client can check
+    # one consistent field (`mfa_required`) regardless of which shape
+    # login() actually returned, rather than needing to introspect for
+    # which fields are present.
+    mfa_required: bool = False
+
+
+class MfaChallengeResponse(BaseModel):
+    """What POST /v1/auth/login returns instead of a TokenPair when the
+    account has 2FA enabled — see app/routers/auth.py's login(). No
+    access to anything yet; `mfa_token` is only good for one thing:
+    POST /v1/auth/login/verify-2fa."""
+
+    mfa_required: bool = True
+    mfa_token: str
+
+
+class Verify2FARequest(BaseModel):
+    mfa_token: str
+    code: str
 
 
 class RefreshRequest(BaseModel):

@@ -15,6 +15,7 @@ from app.models import (  # noqa: F401  (import so Base knows about the tables)
     email_token,
     identity_verification,
     message,
+    mfa_challenge,
     notification_preference,
     portfolio_media,
     provider_availability,
@@ -22,6 +23,7 @@ from app.models import (  # noqa: F401  (import so Base knows about the tables)
     refresh_token,
     report,
     review,
+    totp_backup_code,
     user,
 )
 

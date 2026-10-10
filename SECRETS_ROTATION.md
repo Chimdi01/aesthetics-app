@@ -63,12 +63,10 @@ being logged out the instant you rotate.
    carry actual session continuity — a JWT-key rotation is a one-time
    silent refresh for everyone legitimate, not a mass logout.
 4. If the compromise might also extend to the database (not just the
-   JWT key alone — e.g. a DB leak), additionally revoke refresh tokens
-   for every affected user via `revoke_all_refresh_tokens_for_user`
-   (currently exposed per-user through `POST /v1/auth/logout-all`;
-   there's no single "revoke everyone, platform-wide" admin action
-   today — flagged here as a gap, not built, since it's a severe/rare
-   enough scenario that it hasn't been worth the extra API surface yet).
+   JWT key alone — e.g. a DB leak), additionally revoke every refresh
+   token platform-wide via `POST /v1/admin/revoke-all-sessions`
+   (`confirm: true` required) — the severe-incident lever this exact
+   scenario was built for, not just the per-user `logout-all`.
 
 ## Database credentials (`DATABASE_URL`)
 
@@ -87,6 +85,33 @@ JWT key does.
 **Emergency:** same procedure, done immediately. Also check whatever
 connection/access logs the hosting provider exposes for connections from
 unexpected sources during the suspected window.
+
+## `TOTP_ENCRYPTION_KEY`
+
+**What it protects:** every enrolled user's TOTP secret, encrypted at
+rest with this key (`app/totp_encryption.py`, Fernet). Encrypted, not
+hashed, because the app has to read the real secret back to compute a
+code — unlike a password, there's no one-way hash option. Anyone with
+this key AND database access can decrypt every stored secret and
+generate valid 2FA codes for any account that has 2FA enabled —
+meaningfully less severe than a leaked `JWT_SECRET_KEY` (no DB access
+needed there) or `DATABASE_URL` (no second key needed there), but still
+defeats the one thing 2FA is supposed to add on top of a password.
+
+**No rotation support built** — unlike `JWT_SECRET_KEY`'s multi-key
+verification, Fernet has no "try several keys at read time" option in
+how it's used here. Rotating this key means re-encrypting every
+existing `User.totp_secret_encrypted` value with the new key in one
+pass (decrypt with the old key, re-encrypt with the new one, for every
+row) before removing the old key — there's no gradual/dual-key window.
+Not built yet; if this needs rotating for real, that re-encryption pass
+is a one-off script, not a config change.
+
+**Emergency rotation** (suspected leak): rotate `DATABASE_URL` too if
+there's any chance the leak included DB access — the two together are
+what actually lets someone use this key for anything. The key alone,
+without DB access, can't decrypt secrets it was never given ciphertext
+for.
 
 ## Email provider API key
 

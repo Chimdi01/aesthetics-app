@@ -12,7 +12,7 @@ import logging
 import uuid
 
 from fastapi import APIRouter, Depends, HTTPException, Request
-from sqlalchemy import select
+from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.config import settings
@@ -22,12 +22,30 @@ from app.email_tokens import issue_email_token
 from app.models.device_token import DeviceToken
 from app.models.email_token import EmailTokenPurpose
 from app.models.notification_preference import NotificationPreference
+from app.models.totp_backup_code import TotpBackupCode
 from app.models.user import User, UserRole
 from app.rate_limit import limiter
 from app.schemas.device_token import DeviceTokenPublic, DeviceTokenRegister
 from app.schemas.notification_preference import NotificationPreferencesPublic, NotificationPreferencesUpdate
+from app.schemas.totp import (
+    RegenerateBackupCodesRequest,
+    RegenerateBackupCodesResponse,
+    TotpConfirmRequest,
+    TotpConfirmResponse,
+    TotpDisableRequest,
+    TotpEnrollResponse,
+    TotpStatusResponse,
+)
 from app.schemas.user import PhoneNumberUpdate, UserCreate, UserPublic, UserSummary
-from app.security import get_current_user, hash_password
+from app.security import get_current_user, hash_password, verify_password
+from app.totp import (
+    generate_backup_codes,
+    generate_secret,
+    invalidate_backup_codes,
+    provisioning_uri,
+    verify_totp_code,
+)
+from app.totp_encryption import decrypt_totp_secret, encrypt_totp_secret
 
 logger = logging.getLogger(__name__)
 
@@ -215,6 +233,100 @@ async def unregister_device_token(
     await db.delete(device_token)
     await db.commit()
     logger.info("Device token unregistered: %s (user=%s)", token_id, current_user.id)
+
+
+@router.post("/me/2fa/enroll", response_model=TotpEnrollResponse)
+async def enroll_2fa(db: AsyncSession = Depends(get_db), current_user: User = Depends(get_current_user)):
+    """Step one of two. Generates and stores a new secret but does NOT
+    turn 2FA on yet — POST /me/2fa/confirm does that, after the caller
+    proves they actually got the secret into an authenticator app.
+    Calling this again before confirming just overwrites the pending
+    secret with a fresh one (e.g. the user re-scans after fumbling the
+    first QR code) — nothing is enabled either way until confirm
+    succeeds, so there's no half-enabled state to worry about."""
+    if current_user.totp_enabled:
+        raise HTTPException(status_code=400, detail="2FA is already enabled")
+
+    secret = generate_secret()
+    current_user.totp_secret_encrypted = encrypt_totp_secret(secret)
+    await db.commit()
+    logger.info("2FA enrollment started for user %s", current_user.id)
+    return TotpEnrollResponse(secret=secret, provisioning_uri=provisioning_uri(secret, current_user.email))
+
+
+@router.post("/me/2fa/confirm", response_model=TotpConfirmResponse)
+async def confirm_2fa(
+    payload: TotpConfirmRequest,
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    if current_user.totp_enabled:
+        raise HTTPException(status_code=400, detail="2FA is already enabled")
+    if current_user.totp_secret_encrypted is None:
+        raise HTTPException(status_code=400, detail="Call POST /me/2fa/enroll first")
+
+    secret = decrypt_totp_secret(current_user.totp_secret_encrypted)
+    if not verify_totp_code(secret, payload.code):
+        raise HTTPException(status_code=400, detail="Invalid code")
+
+    current_user.totp_enabled = True
+    backup_codes = generate_backup_codes(db, current_user.id)
+    await db.commit()
+    logger.info("2FA enabled for user %s", current_user.id)
+    return TotpConfirmResponse(backup_codes=backup_codes)
+
+
+@router.get("/me/2fa/status", response_model=TotpStatusResponse)
+async def get_2fa_status(db: AsyncSession = Depends(get_db), current_user: User = Depends(get_current_user)):
+    result = await db.execute(
+        select(func.count())
+        .select_from(TotpBackupCode)
+        .where(TotpBackupCode.user_id == current_user.id, TotpBackupCode.used_at.is_(None))
+    )
+    remaining = result.scalar_one()
+    return TotpStatusResponse(enabled=current_user.totp_enabled, backup_codes_remaining=remaining)
+
+
+@router.post("/me/2fa/disable", status_code=204)
+async def disable_2fa(
+    payload: TotpDisableRequest,
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    """Requires the current PASSWORD, not just the caller's already-valid
+    access token — see TotpDisableRequest's docstring for why disabling
+    2FA specifically needs that extra step-up check."""
+    if not verify_password(payload.password, current_user.hashed_password):
+        raise HTTPException(status_code=403, detail="Incorrect password")
+    if not current_user.totp_enabled:
+        raise HTTPException(status_code=400, detail="2FA is not enabled")
+
+    current_user.totp_enabled = False
+    current_user.totp_secret_encrypted = None
+    await invalidate_backup_codes(db, current_user.id)
+    await db.commit()
+    logger.info("2FA disabled for user %s", current_user.id)
+
+
+@router.post("/me/2fa/backup-codes/regenerate", response_model=RegenerateBackupCodesResponse)
+async def regenerate_backup_codes(
+    payload: RegenerateBackupCodesRequest,
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    """Same password-required reasoning as disable_2fa — a fresh batch
+    of backup codes is just as sensitive as 2FA itself (it's an
+    alternate way past it), so it gets the same step-up check."""
+    if not verify_password(payload.password, current_user.hashed_password):
+        raise HTTPException(status_code=403, detail="Incorrect password")
+    if not current_user.totp_enabled:
+        raise HTTPException(status_code=400, detail="2FA is not enabled")
+
+    await invalidate_backup_codes(db, current_user.id)
+    backup_codes = generate_backup_codes(db, current_user.id)
+    await db.commit()
+    logger.info("Backup codes regenerated for user %s", current_user.id)
+    return RegenerateBackupCodesResponse(backup_codes=backup_codes)
 
 
 @router.get("/{user_id}", response_model=UserPublic | UserSummary)

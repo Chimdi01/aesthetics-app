@@ -115,6 +115,22 @@ class Settings(BaseSettings):
     email_verification_token_expire_hours: int = 24
     password_reset_token_expire_minutes: int = 60
 
+    # Dev-only default (a real, valid Fernet key — not a placeholder
+    # string, since app/totp_encryption.py needs something it can
+    # actually construct a Fernet cipher from) so the app runs out of
+    # the box. Any real deployment MUST override this via a
+    # TOTP_ENCRYPTION_KEY env var — anyone who has this value can
+    # decrypt every enrolled user's TOTP secret straight out of a leaked
+    # DB. No rotation support yet — see app/totp_encryption.py's
+    # docstring and SECRETS_ROTATION.md.
+    totp_encryption_key: str = "DYWJX0F9z-HpSrGp3ReUUsW4YXBvtbmLvsDv8k15VTQ="
+    # The MFA login handshake's challenge token (app/mfa_challenge.py)
+    # is deliberately short-lived — it only exists to carry "this
+    # password already checked out, now prove you have the 2FA device
+    # too" across the two login requests, not to be a usable credential
+    # on its own for any longer than that round trip needs.
+    mfa_challenge_expire_minutes: int = 5
+
     class Config:
         env_file = ".env"
 

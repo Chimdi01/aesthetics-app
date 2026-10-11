@@ -22,14 +22,6 @@ if TYPE_CHECKING:
     from app.models.user import User
 
 
-class ServiceCategory(str, enum.Enum):
-    hair = "hair"
-    makeup = "makeup"
-    nails = "nails"
-    barber = "barber"
-    skincare = "skincare"
-
-
 class AddressType(str, enum.Enum):
     shop = "shop"
     home = "home"
@@ -48,10 +40,9 @@ class ProviderProfile(Base):
     # A single provider can offer more than one type of service (e.g. a
     # stylist who also does makeup) — stored as a Postgres array rather
     # than a join table since this is a "tag the provider" model, not a
-    # full per-service catalog with its own pricing/duration.
-    categories: Mapped[list[ServiceCategory]] = mapped_column(
-        ARRAY(Enum(ServiceCategory, name="servicecategory")), nullable=False
-    )
+    # full per-service catalog with its own pricing/duration. Plain
+    # string array, not a Postgres enum — see app/specialties.py.
+    categories: Mapped[list[str]] = mapped_column(ARRAY(String(50)), nullable=False)
     # Where customers visit the provider. Both nullable: providers created
     # before search existed have no location and simply don't appear in
     # search results until they add one. Geography (not Geometry) so

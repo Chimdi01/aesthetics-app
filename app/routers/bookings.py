@@ -62,7 +62,7 @@ async def create_booking(
 
     if payload.category not in provider_profile.categories:
         raise HTTPException(
-            status_code=400, detail=f"This provider does not offer '{payload.category.value}'"
+            status_code=400, detail=f"This provider does not offer '{payload.category}'"
         )
 
     if payload.scheduled_at <= datetime.now(UTC):
@@ -83,7 +83,7 @@ async def create_booking(
     await db.refresh(booking)
     logger.info(
         "Booking created: %s (customer=%s, provider_profile=%s, category=%s, visit_type=%s)",
-        booking.id, booking.customer_id, booking.provider_profile_id, booking.category.value, booking.visit_type.value,
+        booking.id, booking.customer_id, booking.provider_profile_id, booking.category, booking.visit_type.value,
     )
     return booking
 

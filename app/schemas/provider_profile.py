@@ -3,7 +3,8 @@ from datetime import datetime
 
 from pydantic import BaseModel, ConfigDict, Field, model_validator
 
-from app.models.provider_profile import AddressType, ServiceCategory
+from app.models.provider_profile import AddressType
+from app.specialties import Specialty
 
 
 class ProviderProfileCreate(BaseModel):
@@ -12,7 +13,7 @@ class ProviderProfileCreate(BaseModel):
     years_experience: int | None = None
     # min_length=1: a provider must declare at least one thing they do —
     # an empty list would make them unfindable/unbookable.
-    categories: list[ServiceCategory] = Field(min_length=1)
+    categories: list[Specialty] = Field(min_length=1)
     latitude: float | None = Field(default=None, ge=-90, le=90)
     longitude: float | None = Field(default=None, ge=-180, le=180)
     address_type: AddressType | None = None
@@ -38,7 +39,7 @@ class ProviderProfilePublic(BaseModel):
     business_name: str
     bio: str | None
     years_experience: int | None
-    categories: list[ServiceCategory]
+    categories: list[str]
     address_type: AddressType | None
     is_active: bool
     created_at: datetime
@@ -55,7 +56,7 @@ class ProviderSearchResult(BaseModel):
     id: uuid.UUID
     business_name: str
     bio: str | None
-    categories: list[ServiceCategory]
+    categories: list[str]
     address_type: AddressType | None
     distance_km: float
     average_rating: float | None

@@ -5,12 +5,12 @@ from decimal import Decimal
 from pydantic import BaseModel, ConfigDict, Field, model_validator
 
 from app.models.booking import BookingStatus, VisitType
-from app.models.provider_profile import ServiceCategory
+from app.specialties import Specialty
 
 
 class BookingCreate(BaseModel):
     provider_profile_id: uuid.UUID
-    category: ServiceCategory
+    category: Specialty
     visit_type: VisitType
     address: str | None = None
     scheduled_at: datetime
@@ -37,7 +37,7 @@ class BookingPublic(BaseModel):
     id: uuid.UUID
     customer_id: uuid.UUID
     provider_profile_id: uuid.UUID
-    category: ServiceCategory
+    category: str
     visit_type: VisitType
     address: str | None
     scheduled_at: datetime

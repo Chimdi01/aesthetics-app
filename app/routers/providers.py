@@ -24,7 +24,7 @@ from sqlalchemy import cast, func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.database import get_db
-from app.models.provider_profile import ProviderProfile, ServiceCategory
+from app.models.provider_profile import ProviderProfile
 from app.models.review import Review
 from app.models.user import User
 from app.schemas.provider_profile import (
@@ -33,6 +33,7 @@ from app.schemas.provider_profile import (
     ProviderSearchResult,
 )
 from app.security import get_current_provider
+from app.specialties import Specialty
 
 logger = logging.getLogger(__name__)
 
@@ -74,7 +75,7 @@ async def create_provider_profile(
         "Provider profile created: %s (user=%s, categories=%s)",
         profile.id,
         current_user.id,
-        [c.value for c in profile.categories],
+        profile.categories,
     )
     return profile
 
@@ -84,7 +85,7 @@ async def search_providers(
     latitude: float = Query(ge=-90, le=90),
     longitude: float = Query(ge=-180, le=180),
     radius_km: float = Query(default=10, gt=0, le=50),
-    category: ServiceCategory | None = None,
+    category: Specialty | None = None,
     db: AsyncSession = Depends(get_db),
     limit: int = Query(default=20, ge=1, le=100),
     offset: int = Query(default=0, ge=0),
@@ -117,7 +118,7 @@ async def search_providers(
     )
     if category is not None:
         # The trailing type: ignore is for mypy: SQLAlchemy's stubs for
-        # ARRAY(Enum).any() don't model a bare enum member as an accepted
+        # ARRAY(String).any() don't model a bare str as an accepted
         # argument (they want something shaped like a ColumnElement); the
         # query itself is correct and exercised by
         # tests/regression/test_provider_search.py.

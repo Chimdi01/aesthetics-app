@@ -16,7 +16,6 @@ from sqlalchemy.dialects.postgresql import UUID
 from sqlalchemy.orm import Mapped, mapped_column
 
 from app.database import Base
-from app.models.provider_profile import ServiceCategory
 
 
 class VisitType(str, enum.Enum):
@@ -46,7 +45,8 @@ class Booking(Base):
     provider_profile_id: Mapped[uuid.UUID] = mapped_column(
         UUID(as_uuid=True), ForeignKey("provider_profiles.id"), nullable=False
     )
-    category: Mapped[ServiceCategory] = mapped_column(Enum(ServiceCategory, name="servicecategory"), nullable=False)
+    # Plain string, not a Postgres enum — see app/specialties.py.
+    category: Mapped[str] = mapped_column(String(50), nullable=False)
     visit_type: Mapped[VisitType] = mapped_column(Enum(VisitType, name="visittype"), nullable=False)
     # Required for house_call, left empty for shop_visit — enforced in the
     # Pydantic schema, not as a DB constraint.

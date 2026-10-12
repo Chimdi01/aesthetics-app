@@ -43,6 +43,11 @@ class ProviderProfile(Base):
     # full per-service catalog with its own pricing/duration. Plain
     # string array, not a Postgres enum — see app/specialties.py.
     categories: Mapped[list[str]] = mapped_column(ARRAY(String(50)), nullable=False)
+    # The currency this provider prices in — see app/money.py and
+    # CLAUDE.md's Money convention. A booking's own currency is copied
+    # from this at creation time (same denormalization pattern as
+    # Booking.category from ProviderProfile.categories).
+    currency: Mapped[str] = mapped_column(String(3), nullable=False)
     # Where customers visit the provider. Both nullable: providers created
     # before search existed have no location and simply don't appear in
     # search results until they add one. Geography (not Geometry) so

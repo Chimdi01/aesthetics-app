@@ -18,7 +18,7 @@ async def test_provider_can_register_login_and_publish_a_profile(client):
             "business_name": "Salon Co",
             "bio": "Full service salon",
             "years_experience": 5,
-            "categories": ["hair", "nails"],
+            "currency": "GBP", "categories": ["hair", "nails"],
         },
         headers={"Authorization": f"Bearer {token}"},
     )

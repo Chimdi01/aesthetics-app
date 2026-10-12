@@ -4,6 +4,7 @@ from datetime import datetime
 from pydantic import BaseModel, ConfigDict, Field, model_validator
 
 from app.models.provider_profile import AddressType
+from app.money import Currency
 from app.specialties import Specialty
 
 
@@ -14,6 +15,10 @@ class ProviderProfileCreate(BaseModel):
     # min_length=1: a provider must declare at least one thing they do —
     # an empty list would make them unfindable/unbookable.
     categories: list[Specialty] = Field(min_length=1)
+    # The currency this provider prices in — required, never guessed
+    # from e.g. location, since that's exactly the kind of implicit
+    # behavior the Money convention is meant to avoid.
+    currency: Currency
     latitude: float | None = Field(default=None, ge=-90, le=90)
     longitude: float | None = Field(default=None, ge=-180, le=180)
     address_type: AddressType | None = None
@@ -40,6 +45,7 @@ class ProviderProfilePublic(BaseModel):
     bio: str | None
     years_experience: int | None
     categories: list[str]
+    currency: str
     address_type: AddressType | None
     is_active: bool
     created_at: datetime
@@ -57,6 +63,7 @@ class ProviderSearchResult(BaseModel):
     business_name: str
     bio: str | None
     categories: list[str]
+    currency: str
     address_type: AddressType | None
     distance_km: float
     average_rating: float | None

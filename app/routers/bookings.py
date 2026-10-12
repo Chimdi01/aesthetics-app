@@ -75,6 +75,9 @@ async def create_booking(
         visit_type=payload.visit_type,
         address=payload.address,
         scheduled_at=payload.scheduled_at,
+        # Copied from the provider, never client-supplied — see
+        # app/money.py and CLAUDE.md's Money convention.
+        currency=provider_profile.currency,
         price=payload.price,
         transport_fee=payload.transport_fee,
     )

@@ -8,7 +8,9 @@ async def _create_provider(client, email="jane@example.com", password="secret123
 
 
 async def test_create_provider_profile_without_token_returns_401(client):
-    response = await client.post("/v1/providers/", json={"business_name": "Salon Co", "categories": ["hair"]})
+    response = await client.post(
+        "/v1/providers/", json={"business_name": "Salon Co", "currency": "GBP", "categories": ["hair"]}
+    )
     assert response.status_code == 401
 
 
@@ -17,7 +19,7 @@ async def test_create_provider_profile_as_customer_returns_403(client):
     token = await login(client, "cust@example.com")
     response = await client.post(
         "/v1/providers/",
-        json={"business_name": "Salon Co", "categories": ["hair"]},
+        json={"business_name": "Salon Co", "currency": "GBP", "categories": ["hair"]},
         headers={"Authorization": f"Bearer {token}"},
     )
     assert response.status_code == 403
@@ -31,7 +33,7 @@ async def test_create_provider_profile_success(client):
             "business_name": "Jane's Hair Studio",
             "bio": "10 years",
             "years_experience": 10,
-            "categories": ["hair"],
+            "currency": "GBP", "categories": ["hair"],
         },
         headers=headers,
     )
@@ -49,7 +51,7 @@ async def test_create_provider_profile_with_multiple_categories(client):
     headers = await _create_provider(client)
     response = await client.post(
         "/v1/providers/",
-        json={"business_name": "Jane's Studio", "categories": ["hair", "makeup"]},
+        json={"business_name": "Jane's Studio", "currency": "GBP", "categories": ["hair", "makeup"]},
         headers=headers,
     )
     assert response.status_code == 201
@@ -60,7 +62,7 @@ async def test_create_provider_profile_requires_at_least_one_category(client):
     headers = await _create_provider(client)
     response = await client.post(
         "/v1/providers/",
-        json={"business_name": "Jane's Studio", "categories": []},
+        json={"business_name": "Jane's Studio", "currency": "GBP", "categories": []},
         headers=headers,
     )
     assert response.status_code == 422
@@ -75,12 +77,12 @@ async def test_create_duplicate_provider_profile_returns_409_not_500(client):
     # querying explicitly instead of touching the relationship attribute.
     headers = await _create_provider(client)
     first = await client.post(
-        "/v1/providers/", json={"business_name": "First", "categories": ["hair"]}, headers=headers
+        "/v1/providers/", json={"business_name": "First", "currency": "GBP", "categories": ["hair"]}, headers=headers
     )
     assert first.status_code == 201
 
     second = await client.post(
-        "/v1/providers/", json={"business_name": "Second", "categories": ["nails"]}, headers=headers
+        "/v1/providers/", json={"business_name": "Second", "currency": "GBP", "categories": ["nails"]}, headers=headers
     )
     assert second.status_code == 409
 
@@ -89,7 +91,9 @@ async def test_get_provider_profile_success(client):
     headers = await _create_provider(client)
     created = (
         await client.post(
-            "/v1/providers/", json={"business_name": "Jane's Hair Studio", "categories": ["hair"]}, headers=headers
+            "/v1/providers/",
+            json={"business_name": "Jane's Hair Studio", "currency": "GBP", "categories": ["hair"]},
+            headers=headers,
         )
     ).json()
 

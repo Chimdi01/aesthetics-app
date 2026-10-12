@@ -26,7 +26,7 @@ def test_booking_create_rejects_negative_price():
 
 def test_booking_create_rejects_negative_transport_fee():
     with pytest.raises(ValidationError):
-        BookingCreate(**BASE, transport_fee=-0.01)
+        BookingCreate(**BASE, transport_fee=-1)
 
 
 def test_booking_create_allows_missing_price_and_fee():

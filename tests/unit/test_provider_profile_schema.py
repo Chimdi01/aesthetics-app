@@ -9,7 +9,7 @@ from pydantic import ValidationError
 from app.models.provider_profile import AddressType
 from app.schemas.provider_profile import ProviderProfileCreate
 
-BASE = {"business_name": "Jane's Studio", "categories": ["hair"]}
+BASE = {"business_name": "Jane's Studio", "currency": "GBP", "categories": ["hair"]}
 
 
 def test_profile_without_location_is_valid():

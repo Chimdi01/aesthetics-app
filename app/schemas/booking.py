@@ -1,6 +1,5 @@
 import uuid
 from datetime import datetime
-from decimal import Decimal
 
 from pydantic import BaseModel, ConfigDict, Field, model_validator
 
@@ -14,11 +13,15 @@ class BookingCreate(BaseModel):
     visit_type: VisitType
     address: str | None = None
     scheduled_at: datetime
-    # ge=0: these are client-supplied (no pricing catalog yet — see
-    # CLAUDE.md), but a negative price/fee is never valid regardless of
-    # what pricing model eventually sits behind this field.
-    price: Decimal | None = Field(default=None, ge=0)
-    transport_fee: Decimal | None = Field(default=None, ge=0)
+    # Integer minor units (e.g. pence, kobo) — see app/money.py and
+    # CLAUDE.md's Money convention. No currency field here: a booking's
+    # currency is always copied from the provider's own currency (see
+    # app/routers/bookings.py), never client-supplied. ge=0: these are
+    # client-supplied (no pricing catalog yet — see CLAUDE.md), but a
+    # negative price/fee is never valid regardless of what pricing model
+    # eventually sits behind this field.
+    price: int | None = Field(default=None, ge=0)
+    transport_fee: int | None = Field(default=None, ge=0)
 
     @model_validator(mode="after")
     def require_address_for_house_call(self):
@@ -41,7 +44,8 @@ class BookingPublic(BaseModel):
     visit_type: VisitType
     address: str | None
     scheduled_at: datetime
-    price: Decimal | None
-    transport_fee: Decimal | None
+    currency: str
+    price: int | None
+    transport_fee: int | None
     status: BookingStatus
     created_at: datetime

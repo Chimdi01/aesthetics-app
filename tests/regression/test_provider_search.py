@@ -15,7 +15,7 @@ async def _create_provider(client, email, name="Studio", categories=None, locati
     await register_user(client, email, password="secret123", role="provider", full_name=name)
     token = await login(client, email, "secret123")
     headers = {"Authorization": f"Bearer {token}"}
-    payload = {"business_name": name, "categories": categories or ["hair"]}
+    payload = {"business_name": name, "currency": "GBP", "categories": categories or ["hair"]}
     if location:
         payload.update({"latitude": location[0], "longitude": location[1], "address_type": address_type})
     response = await client.post("/v1/providers/", json=payload, headers=headers)
@@ -40,7 +40,7 @@ async def test_create_profile_with_partial_location_returns_422(client):
     token = await login(client, "a@example.com", "secret123")
     response = await client.post(
         "/v1/providers/",
-        json={"business_name": "X", "categories": ["hair"], "latitude": 51.5},
+        json={"business_name": "X", "currency": "GBP", "categories": ["hair"], "latitude": 51.5},
         headers={"Authorization": f"Bearer {token}"},
     )
     assert response.status_code == 422

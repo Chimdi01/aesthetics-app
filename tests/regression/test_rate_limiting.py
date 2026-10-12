@@ -82,7 +82,7 @@ async def test_portfolio_upload_is_rate_limited_after_twenty_per_hour(client):
     token = await login(client, "provider@example.com", "secret123")
     headers = {"Authorization": f"Bearer {token}"}
     await client.post(
-        "/v1/providers/", json={"business_name": "Studio", "categories": ["hair"]}, headers=headers
+        "/v1/providers/", json={"business_name": "Studio", "currency": "GBP", "categories": ["hair"]}, headers=headers
     )
 
     for _ in range(20):

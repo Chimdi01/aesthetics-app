@@ -9,9 +9,8 @@ column" as a real FK-like constraint), not here.
 import enum
 import uuid
 from datetime import datetime
-from decimal import Decimal
 
-from sqlalchemy import DateTime, Enum, ForeignKey, Index, Numeric, String, func
+from sqlalchemy import BigInteger, DateTime, Enum, ForeignKey, Index, String, func
 from sqlalchemy.dialects.postgresql import UUID
 from sqlalchemy.orm import Mapped, mapped_column
 
@@ -52,9 +51,15 @@ class Booking(Base):
     # Pydantic schema, not as a DB constraint.
     address: Mapped[str | None] = mapped_column(String(500), nullable=True)
     scheduled_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
-    # Numeric, not Float — money should never be a binary float.
-    price: Mapped[Decimal | None] = mapped_column(Numeric(10, 2), nullable=True)
-    transport_fee: Mapped[Decimal | None] = mapped_column(Numeric(10, 2), nullable=True)
+    # Copied from ProviderProfile.currency at creation — see app/money.py
+    # and CLAUDE.md's Money convention.
+    currency: Mapped[str] = mapped_column(String(3), nullable=False)
+    # Integer minor units (e.g. pence, kobo), not Decimal/Numeric — a
+    # float would risk silent rounding error, and minor units need no
+    # fractional part at all. BigInteger, not Integer: NGN/XOF amounts
+    # in minor units can exceed a 32-bit range sooner than expected.
+    price: Mapped[int | None] = mapped_column(BigInteger, nullable=True)
+    transport_fee: Mapped[int | None] = mapped_column(BigInteger, nullable=True)
     status: Mapped[BookingStatus] = mapped_column(
         Enum(BookingStatus, name="bookingstatus"), default=BookingStatus.requested, nullable=False
     )

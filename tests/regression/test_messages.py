@@ -12,7 +12,12 @@ async def _create_provider_with_profile(client, email="jane@example.com", catego
     profile = (
         await client.post(
             "/v1/providers/",
-            json={"business_name": "Jane's Studio", "currency": "GBP", "categories": categories or ["hair"]},
+            json={
+                "business_name": "Jane's Studio",
+                "currency": "GBP",
+                "timezone": "Europe/London",
+                "categories": categories or ["hair"],
+            },
             headers=headers,
         )
     ).json()

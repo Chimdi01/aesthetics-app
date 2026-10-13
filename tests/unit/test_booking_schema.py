@@ -43,3 +43,12 @@ def test_house_call_without_address_is_rejected():
 def test_house_call_with_address_is_valid():
     booking = BookingCreate(**{**BASE, "visit_type": "house_call", "address": "123 Main St"})
     assert booking.address == "123 Main St"
+
+
+def test_naive_scheduled_at_is_rejected():
+    # Regression guard: a naive scheduled_at used to reach
+    # app/routers/bookings.py's `scheduled_at <= datetime.now(UTC)`
+    # check and raise an unhandled TypeError instead of a clean 422 —
+    # see tests/regression/test_bookings.py for the end-to-end version.
+    with pytest.raises(ValidationError):
+        BookingCreate(**{**BASE, "scheduled_at": "2027-01-01T10:00:00"})

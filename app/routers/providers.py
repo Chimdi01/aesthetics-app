@@ -59,6 +59,7 @@ async def create_provider_profile(
         years_experience=payload.years_experience,
         categories=payload.categories,
         currency=payload.currency,
+        timezone=payload.timezone,
         address_type=payload.address_type,
         # WKT is "POINT(longitude latitude)" — x is longitude. Both values
         # are already range-validated floats (see ProviderProfileCreate),
@@ -139,6 +140,7 @@ async def search_providers(
             bio=profile.bio,
             categories=profile.categories,
             currency=profile.currency,
+            timezone=profile.timezone,
             address_type=profile.address_type,
             distance_km=round(distance / 1000, 1),
             average_rating=round(float(avg), 2) if avg is not None else None,

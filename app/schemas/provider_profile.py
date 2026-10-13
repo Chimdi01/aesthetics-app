@@ -6,6 +6,7 @@ from pydantic import BaseModel, ConfigDict, Field, model_validator
 from app.models.provider_profile import AddressType
 from app.money import Currency
 from app.specialties import Specialty
+from app.time_utils import ProviderTimezone
 
 
 class ProviderProfileCreate(BaseModel):
@@ -19,6 +20,10 @@ class ProviderProfileCreate(BaseModel):
     # from e.g. location, since that's exactly the kind of implicit
     # behavior the Money convention is meant to avoid.
     currency: Currency
+    # Required — see app/time_utils.py and CLAUDE.md's Time convention.
+    # Weekly availability is wall-clock and only means something once
+    # paired with this.
+    timezone: ProviderTimezone
     latitude: float | None = Field(default=None, ge=-90, le=90)
     longitude: float | None = Field(default=None, ge=-180, le=180)
     address_type: AddressType | None = None
@@ -46,6 +51,7 @@ class ProviderProfilePublic(BaseModel):
     years_experience: int | None
     categories: list[str]
     currency: str
+    timezone: str
     address_type: AddressType | None
     is_active: bool
     created_at: datetime
@@ -64,6 +70,7 @@ class ProviderSearchResult(BaseModel):
     bio: str | None
     categories: list[str]
     currency: str
+    timezone: str
     address_type: AddressType | None
     distance_km: float
     average_rating: float | None

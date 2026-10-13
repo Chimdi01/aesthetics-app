@@ -14,7 +14,12 @@ async def _create_user(client, email, role="customer"):
 
 
 async def _create_provider_profile(client, headers, categories=None, with_location=False):
-    payload = {"business_name": "Jane's Studio", "currency": "GBP", "categories": categories or ["hair"]}
+    payload = {
+        "business_name": "Jane's Studio",
+        "currency": "GBP",
+        "timezone": "Europe/London",
+        "categories": categories or ["hair"],
+    }
     if with_location:
         payload.update({"latitude": 51.5074, "longitude": -0.1278, "address_type": "shop"})
     response = await client.post("/v1/providers/", json=payload, headers=headers)

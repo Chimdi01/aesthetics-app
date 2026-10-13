@@ -1,7 +1,7 @@
 import uuid
 from datetime import datetime
 
-from pydantic import BaseModel, ConfigDict, Field, model_validator
+from pydantic import AwareDatetime, BaseModel, ConfigDict, Field, model_validator
 
 from app.models.booking import BookingStatus, VisitType
 from app.specialties import Specialty
@@ -12,7 +12,13 @@ class BookingCreate(BaseModel):
     category: Specialty
     visit_type: VisitType
     address: str | None = None
-    scheduled_at: datetime
+    # Must carry a UTC offset — pydantic.AwareDatetime, per CLAUDE.md's
+    # Time convention. A naive value here used to reach
+    # app/routers/bookings.py's `scheduled_at <= datetime.now(UTC)`
+    # check and raise an unhandled TypeError (Python refuses to compare
+    # naive and aware datetimes) instead of a clean 422 — this closes
+    # that, not just a style preference.
+    scheduled_at: AwareDatetime
     # Integer minor units (e.g. pence, kobo) — see app/money.py and
     # CLAUDE.md's Money convention. No currency field here: a booking's
     # currency is always copied from the provider's own currency (see

@@ -10,7 +10,12 @@ async def _create_provider_headers(client, email="jane@example.com"):
 async def _create_provider_profile(client, headers, categories=None):
     response = await client.post(
         "/v1/providers/",
-        json={"business_name": "Jane's Studio", "currency": "GBP", "categories": categories or ["hair"]},
+        json={
+            "business_name": "Jane's Studio",
+            "currency": "GBP",
+            "timezone": "Europe/London",
+            "categories": categories or ["hair"],
+        },
         headers=headers,
     )
     return response.json()

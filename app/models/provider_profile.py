@@ -48,6 +48,12 @@ class ProviderProfile(Base):
     # from this at creation time (same denormalization pattern as
     # Booking.category from ProviderProfile.categories).
     currency: Mapped[str] = mapped_column(String(3), nullable=False)
+    # The provider's own IANA timezone (e.g. "Europe/London",
+    # "Africa/Lagos") — see app/time_utils.py and CLAUDE.md's Time
+    # convention. ProviderAvailability's weekly schedule is stored as
+    # wall-clock time with no timezone of its own; this is what makes
+    # that wall-clock time meaningful.
+    timezone: Mapped[str] = mapped_column(String(50), nullable=False)
     # Where customers visit the provider. Both nullable: providers created
     # before search existed have no location and simply don't appear in
     # search results until they add one. Geography (not Geometry) so

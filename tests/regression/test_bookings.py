@@ -13,7 +13,12 @@ async def _create_provider_with_profile(client, email="jane@example.com", catego
     profile = (
         await client.post(
             "/v1/providers/",
-            json={"business_name": "Jane's Studio", "currency": "GBP", "categories": categories or ["hair"]},
+            json={
+                "business_name": "Jane's Studio",
+                "currency": "GBP",
+                "timezone": "Europe/London",
+                "categories": categories or ["hair"],
+            },
             headers=headers,
         )
     ).json()
@@ -123,6 +128,27 @@ async def test_create_booking_in_the_past_returns_400(client):
         headers=customer_headers,
     )
     assert response.status_code == 400
+
+
+async def test_create_booking_with_naive_scheduled_at_returns_422(client):
+    # Regression guard: before AwareDatetime, a naive scheduled_at
+    # reached the `scheduled_at <= datetime.now(UTC)` comparison in
+    # app/routers/bookings.py and raised an unhandled TypeError (Python
+    # refuses to compare naive and aware datetimes) — a 500, not a
+    # clean 422.
+    profile, _ = await _create_provider_with_profile(client)
+    customer_headers = await _create_customer_headers(client)
+    response = await client.post(
+        "/v1/bookings/",
+        json={
+            "provider_profile_id": profile["id"],
+            "category": "hair",
+            "visit_type": "shop_visit",
+            "scheduled_at": "2027-01-01T10:00:00",
+        },
+        headers=customer_headers,
+    )
+    assert response.status_code == 422
 
 
 async def test_create_house_call_booking_without_address_returns_422(client):

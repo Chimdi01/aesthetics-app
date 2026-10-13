@@ -9,7 +9,7 @@ from pydantic import ValidationError
 from app.models.provider_profile import AddressType
 from app.schemas.provider_profile import ProviderProfileCreate
 
-BASE = {"business_name": "Jane's Studio", "currency": "GBP", "categories": ["hair"]}
+BASE = {"business_name": "Jane's Studio", "currency": "GBP", "timezone": "Europe/London", "categories": ["hair"]}
 
 
 def test_profile_without_location_is_valid():
@@ -46,3 +46,13 @@ def test_out_of_range_coordinates_are_rejected(lat, lon):
 @pytest.mark.parametrize("lat,lon", [(90, 180), (-90, -180), (0, 0)])
 def test_boundary_coordinates_are_accepted(lat, lon):
     ProviderProfileCreate(**BASE, latitude=lat, longitude=lon, address_type="home")
+
+
+def test_valid_iana_timezone_is_accepted():
+    profile = ProviderProfileCreate(**BASE)
+    assert profile.timezone == "Europe/London"
+
+
+def test_unknown_timezone_is_rejected():
+    with pytest.raises(ValidationError):
+        ProviderProfileCreate(**{**BASE, "timezone": "Not/A_Real_Zone"})

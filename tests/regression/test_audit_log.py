@@ -120,7 +120,12 @@ async def test_user_status_change_creates_an_audit_entry_with_cascade_flag(clien
     provider_token = await login(client, "provideruser@example.com")
     await client.post(
         "/v1/providers/",
-        json={"business_name": "Studio", "currency": "GBP", "categories": ["hair"]},
+        json={
+            "business_name": "Studio",
+            "currency": "GBP",
+            "timezone": "Europe/London",
+            "categories": ["hair"],
+        },
         headers={"Authorization": f"Bearer {provider_token}"},
     )
 
@@ -156,7 +161,12 @@ async def test_provider_status_change_creates_an_audit_entry(client):
     profile = (
         await client.post(
             "/v1/providers/",
-            json={"business_name": "Jane's Studio", "currency": "GBP", "categories": ["hair"]},
+            json={
+                "business_name": "Jane's Studio",
+                "currency": "GBP",
+                "timezone": "Europe/London",
+                "categories": ["hair"],
+            },
             headers={"Authorization": f"Bearer {provider_token}"},
         )
     ).json()

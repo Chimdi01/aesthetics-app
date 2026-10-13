@@ -36,6 +36,7 @@ from app.routers import (
     providers,
     reports,
     reviews,
+    specialties,
     users,
     verification,
 )
@@ -54,3 +55,4 @@ router.include_router(verification.router)
 router.include_router(reports.router)
 router.include_router(admin.router)
 router.include_router(payment_webhooks.router)
+router.include_router(specialties.router)

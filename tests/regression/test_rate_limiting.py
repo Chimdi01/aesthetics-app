@@ -86,7 +86,7 @@ async def test_portfolio_upload_is_rate_limited_after_twenty_per_hour(client):
         json={
             "business_name": "Studio",
             "currency": "GBP",
-            "timezone": "Europe/London",
+            "timezone": "Europe/London", "country": "GB",
             "categories": ["hair"],
         },
         headers=headers,

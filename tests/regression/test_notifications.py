@@ -39,7 +39,7 @@ async def _create_provider_with_profile(client, email="jane@example.com"):
             json={
                 "business_name": "Jane's Studio",
                 "currency": "GBP",
-                "timezone": "Europe/London",
+                "timezone": "Europe/London", "country": "GB",
                 "categories": ["hair"],
             },
             headers=headers,

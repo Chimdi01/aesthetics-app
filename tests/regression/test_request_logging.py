@@ -56,7 +56,13 @@ async def test_authorization_denial_is_logged_at_warning(client, caplog):
     profile = (
         await client.post(
             "/v1/providers/",
-            json={"business_name": "Studio", "currency": "GBP", "timezone": "Europe/London", "categories": ["hair"]},
+            json={
+                "business_name": "Studio",
+                "currency": "GBP",
+                "timezone": "Europe/London",
+                "country": "GB",
+                "categories": ["hair"],
+            },
             headers={"Authorization": f"Bearer {owner_token}"},
         )
     ).json()

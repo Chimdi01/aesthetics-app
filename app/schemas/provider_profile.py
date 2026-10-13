@@ -5,6 +5,7 @@ from pydantic import BaseModel, ConfigDict, Field, model_validator
 
 from app.models.provider_profile import AddressType
 from app.money import Currency
+from app.payments.payment_provider import Country
 from app.specialties import Specialty
 from app.time_utils import ProviderTimezone
 
@@ -24,6 +25,9 @@ class ProviderProfileCreate(BaseModel):
     # Weekly availability is wall-clock and only means something once
     # paired with this.
     timezone: ProviderTimezone
+    # ISO 3166-1 alpha-2 — decides the payment processor (see
+    # app/payments/payment_provider.py). Required, never guessed.
+    country: Country
     latitude: float | None = Field(default=None, ge=-90, le=90)
     longitude: float | None = Field(default=None, ge=-180, le=180)
     address_type: AddressType | None = None
@@ -52,6 +56,7 @@ class ProviderProfilePublic(BaseModel):
     categories: list[str]
     currency: str
     timezone: str
+    country: str
     address_type: AddressType | None
     is_active: bool
     created_at: datetime
@@ -71,6 +76,7 @@ class ProviderSearchResult(BaseModel):
     categories: list[str]
     currency: str
     timezone: str
+    country: str
     address_type: AddressType | None
     distance_km: float
     average_rating: float | None

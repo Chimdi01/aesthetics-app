@@ -38,6 +38,8 @@ from app.models import (  # noqa: F401  (import so Base knows about the tables)
     message,
     mfa_challenge,
     notification_preference,
+    payment,
+    payout_account,
     portfolio_media,
     provider_availability,
     provider_profile,
@@ -46,6 +48,7 @@ from app.models import (  # noqa: F401  (import so Base knows about the tables)
     review,
     totp_backup_code,
     user,
+    webhook_event,
 )
 
 TEST_DB_NAME = "aesthetics_test_db"
@@ -105,6 +108,7 @@ async def _clean_tables():
     messages, provider_availability, portfolio_media, reviews, bookings,
     refresh_tokens, email_tokens, notification_preferences,
     device_tokens, mfa_challenges, totp_backup_codes, audit_logs,
+    payments, provider_payout_accounts, processed_webhook_events,
     provider_profiles and users in one statement regardless of the FKs
     between them."""
     async with test_engine.begin() as conn:
@@ -112,7 +116,8 @@ async def _clean_tables():
             text(
                 "TRUNCATE TABLE reports, identity_verifications, messages, provider_availability, "
                 "portfolio_media, reviews, bookings, refresh_tokens, email_tokens, notification_preferences, "
-                "device_tokens, mfa_challenges, totp_backup_codes, audit_logs, provider_profiles, users "
+                "device_tokens, mfa_challenges, totp_backup_codes, audit_logs, payments, "
+                "provider_payout_accounts, processed_webhook_events, provider_profiles, users "
                 "RESTART IDENTITY CASCADE"
             )
         )

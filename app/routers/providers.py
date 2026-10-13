@@ -24,15 +24,18 @@ from sqlalchemy import cast, func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.database import get_db
+from app.models.payout_account import ProviderPayoutAccount
 from app.models.provider_profile import ProviderProfile
 from app.models.review import Review
 from app.models.user import User
+from app.payments.payment_provider import provider_for_country
+from app.schemas.payout_account import PayoutAccountPublic
 from app.schemas.provider_profile import (
     ProviderProfileCreate,
     ProviderProfilePublic,
     ProviderSearchResult,
 )
-from app.security import get_current_provider
+from app.security import get_current_provider, get_current_provider_profile
 from app.specialties import Specialty
 
 logger = logging.getLogger(__name__)
@@ -60,6 +63,7 @@ async def create_provider_profile(
         categories=payload.categories,
         currency=payload.currency,
         timezone=payload.timezone,
+        country=payload.country,
         address_type=payload.address_type,
         # WKT is "POINT(longitude latitude)" — x is longitude. Both values
         # are already range-validated floats (see ProviderProfileCreate),
@@ -71,6 +75,23 @@ async def create_provider_profile(
         ),
     )
     db.add(profile)
+    # Explicit flush before constructing the payout account below: same
+    # "no relationship() between these two ORM classes" gotcha as
+    # app/routers/users.py's create_user (see CLAUDE.md) — without this,
+    # SQLAlchemy's flush doesn't reliably insert provider_profiles
+    # before provider_payout_accounts, and the FK insert fails.
+    await db.flush()
+    # Every provider gets a payout account staged immediately, already
+    # pointed at the right processor for their country — see
+    # app/models/payout_account.py. external_account_id/status stay at
+    # their pending/NULL starting point until a real onboarding flow
+    # (not built yet) fills them in.
+    db.add(
+        ProviderPayoutAccount(
+            provider_profile_id=profile.id,
+            payment_provider=provider_for_country(payload.country),
+        )
+    )
     await db.commit()
     await db.refresh(profile)
     logger.info(
@@ -80,6 +101,28 @@ async def create_provider_profile(
         profile.categories,
     )
     return profile
+
+
+@router.get("/me/payout-account", response_model=PayoutAccountPublic)
+async def get_my_payout_account(
+    db: AsyncSession = Depends(get_db),
+    provider_profile: ProviderProfile = Depends(get_current_provider_profile),
+):
+    """Static path, registered before GET /{profile_id} below — same
+    route-ordering reasoning as /search. No relationship() between
+    ProviderProfile and ProviderPayoutAccount (deliberately — same
+    raw-FK-only pattern as other such pairs in this codebase), so this
+    queries explicitly rather than touching a lazy attribute."""
+    result = await db.execute(
+        select(ProviderPayoutAccount).where(ProviderPayoutAccount.provider_profile_id == provider_profile.id)
+    )
+    payout_account = result.scalar_one_or_none()
+    if payout_account is None:
+        # Shouldn't happen — create_provider_profile always stages one —
+        # but a profile created before this existed, or direct DB
+        # tampering, could leave this gap.
+        raise HTTPException(status_code=404, detail="No payout account found for this provider")
+    return payout_account
 
 
 @router.get("/search", response_model=list[ProviderSearchResult])
@@ -141,6 +184,7 @@ async def search_providers(
             categories=profile.categories,
             currency=profile.currency,
             timezone=profile.timezone,
+            country=profile.country,
             address_type=profile.address_type,
             distance_km=round(distance / 1000, 1),
             average_rating=round(float(avg), 2) if avg is not None else None,

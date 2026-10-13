@@ -13,7 +13,7 @@ async def test_create_provider_profile_without_token_returns_401(client):
         json={
             "business_name": "Salon Co",
             "currency": "GBP",
-            "timezone": "Europe/London",
+            "timezone": "Europe/London", "country": "GB",
             "categories": ["hair"],
         },
     )
@@ -28,7 +28,7 @@ async def test_create_provider_profile_as_customer_returns_403(client):
         json={
             "business_name": "Salon Co",
             "currency": "GBP",
-            "timezone": "Europe/London",
+            "timezone": "Europe/London", "country": "GB",
             "categories": ["hair"],
         },
         headers={"Authorization": f"Bearer {token}"},
@@ -45,7 +45,7 @@ async def test_create_provider_profile_success(client):
             "bio": "10 years",
             "years_experience": 10,
             "currency": "GBP",
-            "timezone": "Europe/London",
+            "timezone": "Europe/London", "country": "GB",
             "categories": ["hair"],
         },
         headers=headers,
@@ -67,7 +67,7 @@ async def test_create_provider_profile_with_multiple_categories(client):
         json={
             "business_name": "Jane's Studio",
             "currency": "GBP",
-            "timezone": "Europe/London",
+            "timezone": "Europe/London", "country": "GB",
             "categories": ["hair", "makeup"],
         },
         headers=headers,
@@ -83,7 +83,7 @@ async def test_create_provider_profile_requires_at_least_one_category(client):
         json={
             "business_name": "Jane's Studio",
             "currency": "GBP",
-            "timezone": "Europe/London",
+            "timezone": "Europe/London", "country": "GB",
             "categories": [],
         },
         headers=headers,
@@ -119,7 +119,7 @@ async def test_create_duplicate_provider_profile_returns_409_not_500(client):
         json={
             "business_name": "First",
             "currency": "GBP",
-            "timezone": "Europe/London",
+            "timezone": "Europe/London", "country": "GB",
             "categories": ["hair"],
         },
         headers=headers,
@@ -131,7 +131,7 @@ async def test_create_duplicate_provider_profile_returns_409_not_500(client):
         json={
             "business_name": "Second",
             "currency": "GBP",
-            "timezone": "Europe/London",
+            "timezone": "Europe/London", "country": "GB",
             "categories": ["nails"],
         },
         headers=headers,
@@ -147,7 +147,7 @@ async def test_get_provider_profile_success(client):
             json={
                 "business_name": "Jane's Hair Studio",
                 "currency": "GBP",
-                "timezone": "Europe/London",
+                "timezone": "Europe/London", "country": "GB",
                 "categories": ["hair"],
             },
             headers=headers,

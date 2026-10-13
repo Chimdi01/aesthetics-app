@@ -18,6 +18,8 @@ from app.models import (  # noqa: F401  (import so Base knows about the tables)
     message,
     mfa_challenge,
     notification_preference,
+    payment,
+    payout_account,
     portfolio_media,
     provider_availability,
     provider_profile,
@@ -26,6 +28,7 @@ from app.models import (  # noqa: F401  (import so Base knows about the tables)
     review,
     totp_backup_code,
     user,
+    webhook_event,
 )
 
 # this is the Alembic Config object, which provides

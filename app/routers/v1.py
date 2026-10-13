@@ -30,6 +30,7 @@ from app.routers import (
     auth,
     bookings,
     messages,
+    payment_webhooks,
     portfolio,
     provider_availability,
     providers,
@@ -52,3 +53,4 @@ router.include_router(messages.router)
 router.include_router(verification.router)
 router.include_router(reports.router)
 router.include_router(admin.router)
+router.include_router(payment_webhooks.router)

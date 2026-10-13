@@ -9,7 +9,13 @@ from pydantic import ValidationError
 from app.models.provider_profile import AddressType
 from app.schemas.provider_profile import ProviderProfileCreate
 
-BASE = {"business_name": "Jane's Studio", "currency": "GBP", "timezone": "Europe/London", "categories": ["hair"]}
+BASE = {
+    "business_name": "Jane's Studio",
+    "currency": "GBP",
+    "timezone": "Europe/London",
+    "country": "GB",
+    "categories": ["hair"],
+}
 
 
 def test_profile_without_location_is_valid():
@@ -56,3 +62,15 @@ def test_valid_iana_timezone_is_accepted():
 def test_unknown_timezone_is_rejected():
     with pytest.raises(ValidationError):
         ProviderProfileCreate(**{**BASE, "timezone": "Not/A_Real_Zone"})
+
+
+def test_configured_country_is_accepted():
+    profile = ProviderProfileCreate(**BASE)
+    assert profile.country == "GB"
+
+
+def test_unconfigured_country_is_rejected():
+    # US/South America are real future intent (see CLAUDE.md) but not
+    # a decided market yet.
+    with pytest.raises(ValidationError):
+        ProviderProfileCreate(**{**BASE, "country": "US"})

@@ -54,6 +54,12 @@ class ProviderProfile(Base):
     # wall-clock time with no timezone of its own; this is what makes
     # that wall-clock time meaningful.
     timezone: Mapped[str] = mapped_column(String(50), nullable=False)
+    # ISO 3166-1 alpha-2 — see app/payments/payment_provider.py, which
+    # decides this provider's payment processor FROM this field (not
+    # currency, which is ambiguous across processors — see that
+    # module's docstring). An allowlist in code, not a Postgres enum —
+    # same "a market is configuration" reasoning as currency/specialties.
+    country: Mapped[str] = mapped_column(String(2), nullable=False)
     # Where customers visit the provider. Both nullable: providers created
     # before search existed have no location and simply don't appear in
     # search results until they add one. Geography (not Geometry) so

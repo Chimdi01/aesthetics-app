@@ -18,7 +18,7 @@ async def _create_provider(client, email, name="Studio", categories=None, locati
     payload = {
         "business_name": name,
         "currency": "GBP",
-        "timezone": "Europe/London",
+        "timezone": "Europe/London", "country": "GB",
         "categories": categories or ["hair"],
     }
     if location:
@@ -48,7 +48,7 @@ async def test_create_profile_with_partial_location_returns_422(client):
         json={
             "business_name": "X",
             "currency": "GBP",
-            "timezone": "Europe/London",
+            "timezone": "Europe/London", "country": "GB",
             "categories": ["hair"],
             "latitude": 51.5,
         },

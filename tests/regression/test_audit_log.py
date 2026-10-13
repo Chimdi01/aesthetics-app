@@ -123,7 +123,7 @@ async def test_user_status_change_creates_an_audit_entry_with_cascade_flag(clien
         json={
             "business_name": "Studio",
             "currency": "GBP",
-            "timezone": "Europe/London",
+            "timezone": "Europe/London", "country": "GB",
             "categories": ["hair"],
         },
         headers={"Authorization": f"Bearer {provider_token}"},
@@ -164,7 +164,7 @@ async def test_provider_status_change_creates_an_audit_entry(client):
             json={
                 "business_name": "Jane's Studio",
                 "currency": "GBP",
-                "timezone": "Europe/London",
+                "timezone": "Europe/London", "country": "GB",
                 "categories": ["hair"],
             },
             headers={"Authorization": f"Bearer {provider_token}"},

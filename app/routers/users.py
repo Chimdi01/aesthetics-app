@@ -65,7 +65,7 @@ async def create_user(request: Request, payload: UserCreate, db: AsyncSession = 
 
     user = User(
         email=payload.email,
-        hashed_password=hash_password(payload.password),
+        hashed_password=await hash_password(payload.password),
         full_name=payload.full_name,
         role=payload.role,
     )
@@ -296,7 +296,7 @@ async def disable_2fa(
     """Requires the current PASSWORD, not just the caller's already-valid
     access token — see TotpDisableRequest's docstring for why disabling
     2FA specifically needs that extra step-up check."""
-    if not verify_password(payload.password, current_user.hashed_password):
+    if not await verify_password(payload.password, current_user.hashed_password):
         raise HTTPException(status_code=403, detail="Incorrect password")
     if not current_user.totp_enabled:
         raise HTTPException(status_code=400, detail="2FA is not enabled")
@@ -317,7 +317,7 @@ async def regenerate_backup_codes(
     """Same password-required reasoning as disable_2fa — a fresh batch
     of backup codes is just as sensitive as 2FA itself (it's an
     alternate way past it), so it gets the same step-up check."""
-    if not verify_password(payload.password, current_user.hashed_password):
+    if not await verify_password(payload.password, current_user.hashed_password):
         raise HTTPException(status_code=403, detail="Incorrect password")
     if not current_user.totp_enabled:
         raise HTTPException(status_code=400, detail="2FA is not enabled")

@@ -11,18 +11,18 @@ from app.config import settings
 from app.security import create_access_token, decode_access_token, hash_password, verify_password
 
 
-def test_hash_password_roundtrip():
-    hashed = hash_password("correct horse battery staple")
+async def test_hash_password_roundtrip():
+    hashed = await hash_password("correct horse battery staple")
     assert hashed != "correct horse battery staple"
-    assert verify_password("correct horse battery staple", hashed)
+    assert await verify_password("correct horse battery staple", hashed)
 
 
-def test_verify_password_rejects_wrong_password():
-    hashed = hash_password("correct horse battery staple")
-    assert not verify_password("wrong password", hashed)
+async def test_verify_password_rejects_wrong_password():
+    hashed = await hash_password("correct horse battery staple")
+    assert not await verify_password("wrong password", hashed)
 
 
-def test_hash_password_handles_long_passwords_without_crashing():
+async def test_hash_password_handles_long_passwords_without_crashing():
     # Regression guard: passlib==1.7.4 + bcrypt>=4.0 crashes on this with
     # "password cannot be longer than 72 bytes" — not just for inputs
     # over 72 bytes, but for EVERY hash() call, because the crash happens
@@ -30,8 +30,8 @@ def test_hash_password_handles_long_passwords_without_crashing():
     # above) would already have caught it, but a >72-byte one is the
     # input the underlying bug report was actually about.
     long_password = "x" * 200
-    hashed = hash_password(long_password)
-    assert verify_password(long_password, hashed)
+    hashed = await hash_password(long_password)
+    assert await verify_password(long_password, hashed)
 
 
 def test_create_access_token_contains_correct_subject_and_expiry():

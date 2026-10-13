@@ -95,11 +95,11 @@ async def login(
         # app/login_lockout.py's docstring for why: revealing lockout
         # state would itself be an account-enumeration leak). Only this
         # log line tells the two apart.
-        verify_password(form_data.password, user.hashed_password)
+        await verify_password(form_data.password, user.hashed_password)
         logger.warning("Login attempt against locked-out account: %s", normalized_email)
         raise credentials_error
 
-    if not user or not verify_password(form_data.password, user.hashed_password):
+    if not user or not await verify_password(form_data.password, user.hashed_password):
         if user is not None:
             record_failed_login(user)
             await db.commit()
@@ -314,7 +314,7 @@ async def reset_password(payload: ResetPasswordRequest, db: AsyncSession = Depen
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Invalid or expired reset link")
 
     stored.used_at = datetime.now(UTC)
-    user.hashed_password = hash_password(payload.new_password)
+    user.hashed_password = await hash_password(payload.new_password)
     # A credential change invalidates every existing session, not just
     # whichever one triggered it — if the reset was prompted by a
     # compromised account, leaving old refresh tokens alive would let

@@ -21,6 +21,7 @@ from fastapi.security import OAuth2PasswordBearer
 from passlib.context import CryptContext
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
+from starlette.concurrency import run_in_threadpool
 
 from app.config import settings
 from app.database import get_db
@@ -36,12 +37,18 @@ pwd_context = CryptContext(schemes=["bcrypt"], deprecated="auto")
 oauth2_scheme = OAuth2PasswordBearer(tokenUrl="/v1/auth/login")
 
 
-def hash_password(password: str) -> str:
-    return pwd_context.hash(password)
+async def hash_password(password: str) -> str:
+    # bcrypt is deliberately slow (~300ms measured on this machine) and
+    # CPU-bound — calling it directly from an async def route doesn't
+    # background it, it blocks uvicorn's single event loop for that
+    # whole duration, stalling every other concurrent request on that
+    # worker. Same fix already applied to app/storage.py's Pillow calls
+    # (see CHANGELOG) — run_in_threadpool offloads it instead.
+    return await run_in_threadpool(pwd_context.hash, password)
 
 
-def verify_password(plain_password: str, hashed_password: str) -> bool:
-    return pwd_context.verify(plain_password, hashed_password)
+async def verify_password(plain_password: str, hashed_password: str) -> bool:
+    return await run_in_threadpool(pwd_context.verify, plain_password, hashed_password)
 
 
 def create_access_token(user_id: uuid.UUID) -> str:

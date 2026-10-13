@@ -3,10 +3,10 @@ from datetime import datetime
 
 from pydantic import BaseModel, ConfigDict, Field, model_validator
 
+from app.categories import Category
 from app.models.provider_profile import AddressType
 from app.money import Currency
 from app.payments.payment_provider import Country
-from app.specialties import Specialty
 from app.time_utils import ProviderTimezone
 
 
@@ -16,7 +16,7 @@ class ProviderProfileCreate(BaseModel):
     years_experience: int | None = None
     # min_length=1: a provider must declare at least one thing they do —
     # an empty list would make them unfindable/unbookable.
-    categories: list[Specialty] = Field(min_length=1)
+    categories: list[Category] = Field(min_length=1)
     # The currency this provider prices in — required, never guessed
     # from e.g. location, since that's exactly the kind of implicit
     # behavior the Money convention is meant to avoid.

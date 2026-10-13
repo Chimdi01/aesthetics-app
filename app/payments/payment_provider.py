@@ -12,14 +12,14 @@ and parts of South America eventually; Flutterwave for Africa. The two
 are different liability models — never assumed to behave alike.
 
 COUNTRIES/PROVIDER_BY_COUNTRY are an allowlist in code, same pattern as
-app/specialties.py / app/money.py / app/time_utils.py's ProviderTimezone
+app/categories.py / app/money.py / app/time_utils.py's ProviderTimezone
 — adding a market is adding a dict entry here, not a schema migration.
 Only today's actual, decided launch markets are mapped (Wave 1: GB/NG,
 Wave 2: FR/CI/SN — see CLAUDE.md's "What this is"). The US and South
 America are real stated intent, not yet a decided market the way those
 five are, so they're deliberately NOT in this dict yet — add them
 (each with its own currency in app/money.py too) once they're actually
-decided, the same discipline already applied to currencies/specialties.
+decided, the same discipline already applied to currencies/categories.
 
 PaymentProvider itself, unlike country, is NOT expected to grow often —
 adding a third processor is a rare, heavy integration decision, not a

@@ -4,7 +4,7 @@ The User model is the one table shared by customers AND providers
 field distinguishes them rather than having two separate tables — this
 keeps auth simple (one login system) while ProviderProfile (added in a
 later session) holds the extra fields that only providers need
-(specialties, price range, portfolio media).
+(categories, price range, portfolio media).
 """
 import enum
 import uuid

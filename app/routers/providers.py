@@ -23,6 +23,7 @@ from geoalchemy2 import Geography, WKTElement
 from sqlalchemy import cast, func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.categories import Category
 from app.database import get_db
 from app.models.payout_account import ProviderPayoutAccount
 from app.models.provider_profile import ProviderProfile
@@ -36,7 +37,6 @@ from app.schemas.provider_profile import (
     ProviderSearchResult,
 )
 from app.security import get_current_provider, get_current_provider_profile
-from app.specialties import Specialty
 
 logger = logging.getLogger(__name__)
 
@@ -130,7 +130,7 @@ async def search_providers(
     latitude: float = Query(ge=-90, le=90),
     longitude: float = Query(ge=-180, le=180),
     radius_km: float = Query(default=10, gt=0, le=50),
-    category: Specialty | None = None,
+    category: Category | None = None,
     db: AsyncSession = Depends(get_db),
     limit: int = Query(default=20, ge=1, le=100),
     offset: int = Query(default=0, ge=0),

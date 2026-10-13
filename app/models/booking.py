@@ -44,7 +44,7 @@ class Booking(Base):
     provider_profile_id: Mapped[uuid.UUID] = mapped_column(
         UUID(as_uuid=True), ForeignKey("provider_profiles.id"), nullable=False
     )
-    # Plain string, not a Postgres enum — see app/specialties.py.
+    # Plain string, not a Postgres enum — see app/categories.py.
     category: Mapped[str] = mapped_column(String(50), nullable=False)
     visit_type: Mapped[VisitType] = mapped_column(Enum(VisitType, name="visittype"), nullable=False)
     # Required for house_call, left empty for shop_visit — enforced in the

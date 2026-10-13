@@ -4,7 +4,7 @@ Locale convention and app/notification_templates.py for where this
 actually gets used (rendering human-facing notification copy).
 
 LANGUAGES is an allowlist in code, not a Postgres enum — same pattern
-as app/specialties.py and app/money.py — so adding a language is a
+as app/categories.py and app/money.py — so adding a language is a
 data change (add template entries in app/notification_templates.py,
 add the code here), not a schema migration.
 """

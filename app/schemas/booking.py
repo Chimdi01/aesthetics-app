@@ -3,13 +3,13 @@ from datetime import datetime
 
 from pydantic import AwareDatetime, BaseModel, ConfigDict, Field, model_validator
 
+from app.categories import Category
 from app.models.booking import BookingStatus, VisitType
-from app.specialties import Specialty
 
 
 class BookingCreate(BaseModel):
     provider_profile_id: uuid.UUID
-    category: Specialty
+    category: Category
     visit_type: VisitType
     address: str | None = None
     # Must carry a UTC offset — pydantic.AwareDatetime, per CLAUDE.md's

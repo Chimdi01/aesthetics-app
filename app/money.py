@@ -5,7 +5,7 @@ currency. See CLAUDE.md's Money convention.
 
 CURRENCIES is an allowlist in code, not the full ISO 4217 standard —
 just the launch markets' currencies (see CLAUDE.md's market list) —
-same "allowlist in code, not a DB enum" pattern as app/specialties.py.
+same "allowlist in code, not a DB enum" pattern as app/categories.py.
 Each value is the number of minor units per major unit: 2 for a
 cents/kobo/pence-style currency, 0 for XOF, which has no subdivision
 used in practice.

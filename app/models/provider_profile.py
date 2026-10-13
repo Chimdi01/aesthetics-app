@@ -41,7 +41,7 @@ class ProviderProfile(Base):
     # stylist who also does makeup) — stored as a Postgres array rather
     # than a join table since this is a "tag the provider" model, not a
     # full per-service catalog with its own pricing/duration. Plain
-    # string array, not a Postgres enum — see app/specialties.py.
+    # string array, not a Postgres enum — see app/categories.py.
     categories: Mapped[list[str]] = mapped_column(ARRAY(String(50)), nullable=False)
     # The currency this provider prices in — see app/money.py and
     # CLAUDE.md's Money convention. A booking's own currency is copied
@@ -58,7 +58,7 @@ class ProviderProfile(Base):
     # decides this provider's payment processor FROM this field (not
     # currency, which is ambiguous across processors — see that
     # module's docstring). An allowlist in code, not a Postgres enum —
-    # same "a market is configuration" reasoning as currency/specialties.
+    # same "a market is configuration" reasoning as currency/categories.
     country: Mapped[str] = mapped_column(String(2), nullable=False)
     # Where customers visit the provider. Both nullable: providers created
     # before search existed have no location and simply don't appear in

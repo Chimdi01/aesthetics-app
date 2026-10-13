@@ -24,6 +24,7 @@ from app.models.email_token import EmailTokenPurpose
 from app.models.notification_preference import NotificationPreference
 from app.models.totp_backup_code import TotpBackupCode
 from app.models.user import User, UserRole
+from app.notification_templates import render
 from app.rate_limit import limiter
 from app.schemas.device_token import DeviceTokenPublic, DeviceTokenRegister
 from app.schemas.notification_preference import NotificationPreferencesPublic, NotificationPreferencesUpdate
@@ -36,7 +37,7 @@ from app.schemas.totp import (
     TotpEnrollResponse,
     TotpStatusResponse,
 )
-from app.schemas.user import PhoneNumberUpdate, UserCreate, UserPublic, UserSummary
+from app.schemas.user import PhoneNumberUpdate, PreferredLanguageUpdate, UserCreate, UserPublic, UserSummary
 from app.security import get_current_user, hash_password, verify_password
 from app.totp import (
     generate_backup_codes,
@@ -91,11 +92,12 @@ async def create_user(request: Request, payload: UserCreate, db: AsyncSession = 
     logger.info("User created: %s (role=%s)", user.id, user.role.value)
 
     try:
-        await send_email(
-            user.email,
-            "Verify your email",
-            f"Click to verify your email: {settings.frontend_base_url}/verify-email?token={raw_token}",
+        subject, body = render(
+            "verify_email",
+            user.preferred_language,
+            link=f"{settings.frontend_base_url}/verify-email?token={raw_token}",
         )
+        await send_email(user.email, subject, body)
     except Exception:
         # Account creation succeeds regardless of whether the email
         # actually went out — deliverability flakiness shouldn't fail
@@ -123,6 +125,21 @@ async def update_my_phone_number(
     logger.info(
         "User %s %s their phone number", current_user.id, "set" if payload.phone_number else "cleared"
     )
+    return current_user
+
+
+@router.patch("/me/preferred-language", response_model=UserPublic)
+async def update_my_preferred_language(
+    payload: PreferredLanguageUpdate,
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    """Same static-path-before-/{user_id} reasoning as
+    update_my_phone_number above."""
+    current_user.preferred_language = payload.preferred_language
+    await db.commit()
+    await db.refresh(current_user)
+    logger.info("User %s set preferred_language to %s", current_user.id, current_user.preferred_language)
     return current_user
 
 

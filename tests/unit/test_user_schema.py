@@ -7,7 +7,7 @@ covered indirectly through a regression test.
 import pytest
 from pydantic import ValidationError
 
-from app.schemas.user import PhoneNumberUpdate, UserCreate
+from app.schemas.user import PhoneNumberUpdate, PreferredLanguageUpdate, UserCreate
 
 
 def test_user_create_defaults_to_customer_role():
@@ -67,3 +67,17 @@ def test_phone_number_update_accepts_none_to_clear():
 def test_phone_number_update_rejects_invalid_formats(bad_number):
     with pytest.raises(ValidationError):
         PhoneNumberUpdate(phone_number=bad_number)
+
+
+# --- PreferredLanguageUpdate's allowlist validation ---
+
+
+@pytest.mark.parametrize("language", ["en", "fr"])
+def test_preferred_language_update_accepts_supported_languages(language):
+    update = PreferredLanguageUpdate(preferred_language=language)
+    assert update.preferred_language == language
+
+
+def test_preferred_language_update_rejects_unsupported_language():
+    with pytest.raises(ValidationError):
+        PreferredLanguageUpdate(preferred_language="de")

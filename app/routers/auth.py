@@ -32,6 +32,7 @@ from app.login_lockout import is_locked_out, record_failed_login, record_success
 from app.mfa_challenge import get_valid_mfa_challenge, issue_mfa_challenge
 from app.models.email_token import EmailTokenPurpose
 from app.models.user import User
+from app.notification_templates import render
 from app.rate_limit import limiter
 from app.refresh_tokens import (
     get_valid_refresh_token,
@@ -264,11 +265,12 @@ async def resend_verification(
     raw_token = issue_email_token(db, current_user.id, EmailTokenPurpose.verify_email)
     await db.commit()
 
-    await send_email(
-        current_user.email,
-        "Verify your email",
-        f"Click to verify your email: {settings.frontend_base_url}/verify-email?token={raw_token}",
+    subject, body = render(
+        "verify_email",
+        current_user.preferred_language,
+        link=f"{settings.frontend_base_url}/verify-email?token={raw_token}",
     )
+    await send_email(current_user.email, subject, body)
     logger.info("Resent verification email to user %s", current_user.id)
 
 
@@ -291,11 +293,12 @@ async def forgot_password(request: Request, payload: ForgotPasswordRequest, db: 
         await invalidate_pending_tokens(db, user.id, EmailTokenPurpose.reset_password)
         raw_token = issue_email_token(db, user.id, EmailTokenPurpose.reset_password)
         await db.commit()
-        await send_email(
-            user.email,
-            "Reset your password",
-            f"Click to reset your password: {settings.frontend_base_url}/reset-password?token={raw_token}",
+        subject, body = render(
+            "reset_password",
+            user.preferred_language,
+            link=f"{settings.frontend_base_url}/reset-password?token={raw_token}",
         )
+        await send_email(user.email, subject, body)
         logger.info("Password reset requested for user %s", user.id)
     else:
         logger.info("Password reset requested for unregistered email %s", normalized_email)

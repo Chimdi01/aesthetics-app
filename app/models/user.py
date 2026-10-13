@@ -81,6 +81,11 @@ class User(Base):
     # real value back to compute a code, unlike a password).
     totp_secret_encrypted: Mapped[str | None] = mapped_column(String(255), nullable=True)
     totp_enabled: Mapped[bool] = mapped_column(Boolean, server_default="false", nullable=False)
+    # ISO 639-1 — see app/locale.py and CLAUDE.md's Locale convention.
+    # Not collected at signup, same "optional, added via its own PATCH"
+    # posture as phone_number above — default 'en' until the user says
+    # otherwise via PATCH /v1/users/me/preferred-language.
+    preferred_language: Mapped[str] = mapped_column(String(2), server_default="en", nullable=False)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
 
     # Same circular-import-avoidance forward reference as the "User"

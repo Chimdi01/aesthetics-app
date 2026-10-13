@@ -150,6 +150,46 @@ async def test_update_my_phone_number_without_token_returns_401(client):
     assert response.status_code == 401
 
 
+# --- preferred language (PATCH /v1/users/me/preferred-language) ---
+
+
+async def test_new_signup_defaults_to_english(client):
+    created = (await register_user(client, "jane@example.com")).json()
+    assert created["preferred_language"] == "en"
+
+
+async def test_update_my_preferred_language(client):
+    created = (await register_user(client, "jane@example.com")).json()
+    token = await login(client, "jane@example.com")
+    headers = {"Authorization": f"Bearer {token}"}
+
+    response = await client.patch(
+        "/v1/users/me/preferred-language", json={"preferred_language": "fr"}, headers=headers
+    )
+    assert response.status_code == 200
+    assert response.json()["preferred_language"] == "fr"
+
+    # Persisted, not just echoed back.
+    fetched = await client.get(f"/v1/users/{created['id']}", headers=headers)
+    assert fetched.json()["preferred_language"] == "fr"
+
+
+async def test_update_my_preferred_language_rejects_unsupported_language(client):
+    await register_user(client, "badlang@example.com")
+    token = await login(client, "badlang@example.com")
+    response = await client.patch(
+        "/v1/users/me/preferred-language",
+        json={"preferred_language": "de"},
+        headers={"Authorization": f"Bearer {token}"},
+    )
+    assert response.status_code == 422
+
+
+async def test_update_my_preferred_language_without_token_returns_401(client):
+    response = await client.patch("/v1/users/me/preferred-language", json={"preferred_language": "fr"})
+    assert response.status_code == 401
+
+
 # --- notification preferences (GET/PATCH /v1/users/me/notification-preferences) ---
 
 

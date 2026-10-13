@@ -49,6 +49,7 @@ from app.email import send_email
 from app.models.device_token import DeviceToken
 from app.models.notification_preference import MessageNotificationFrequency, NotificationPreference
 from app.models.user import User
+from app.notification_templates import render
 from app.push import send_push
 from app.sms import send_sms
 
@@ -102,21 +103,26 @@ async def notify_new_message(
     prefs = await _get_preferences(db, recipient.id)
     if not _should_notify_new_message(prefs, is_first_message):
         return
-    await _dispatch(db, recipient, "New message", f"{sender_name}: {message_body}")
+    subject, body = render(
+        "new_message", recipient.preferred_language, sender_name=sender_name, message_body=message_body
+    )
+    await _dispatch(db, recipient, subject, body)
 
 
 async def notify_booking_status_changed(db: AsyncSession, recipient: User, new_status: str) -> None:
     prefs = await _get_preferences(db, recipient.id)
     if not prefs.notify_on_booking_status_change:
         return
-    await _dispatch(db, recipient, "Booking update", f"Your booking is now {new_status}.")
+    subject, body = render("booking_status_changed", recipient.preferred_language, new_status=new_status)
+    await _dispatch(db, recipient, subject, body)
 
 
 async def notify_new_review(db: AsyncSession, recipient: User, rating: int) -> None:
     prefs = await _get_preferences(db, recipient.id)
     if not prefs.notify_on_new_review:
         return
-    await _dispatch(db, recipient, "New review", f"You received a new {rating}-star review.")
+    subject, body = render("new_review", recipient.preferred_language, rating=rating)
+    await _dispatch(db, recipient, subject, body)
 
 
 async def notify_verification_decision(
@@ -126,10 +132,10 @@ async def notify_verification_decision(
     if not prefs.notify_on_verification_decision:
         return
     if approved:
-        body = "Your identity verification was approved."
+        subject, body = render("verification_approved", recipient.preferred_language)
     else:
-        body = f"Your identity verification was rejected: {rejection_reason}"
-    await _dispatch(db, recipient, "Verification update", body)
+        subject, body = render("verification_rejected", recipient.preferred_language, reason=rejection_reason)
+    await _dispatch(db, recipient, subject, body)
 
 
 async def notify_report_decision(db: AsyncSession, recipient: User, status: str) -> None:
@@ -142,4 +148,5 @@ async def notify_report_decision(db: AsyncSession, recipient: User, status: str)
     prefs = await _get_preferences(db, recipient.id)
     if not prefs.notify_on_report_decision:
         return
-    await _dispatch(db, recipient, "Report update", f"A report you filed has been {status}.")
+    subject, body = render("report_decision", recipient.preferred_language, status=status)
+    await _dispatch(db, recipient, subject, body)

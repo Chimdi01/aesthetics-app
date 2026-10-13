@@ -14,6 +14,7 @@ from datetime import datetime
 
 from pydantic import BaseModel, ConfigDict, EmailStr, Field, field_validator
 
+from app.locale import Language
 from app.models.user import UserRole
 
 # E.164: a leading "+", then 1-15 digits, the first of which can't be 0.
@@ -74,6 +75,7 @@ class UserPublic(BaseModel):
     # Same visibility reasoning as email: PII, not shown to strangers
     # via UserSummary below.
     phone_number: str | None
+    preferred_language: str
     created_at: datetime
 
 
@@ -110,3 +112,7 @@ class PhoneNumberUpdate(BaseModel):
         if value is not None and not _E164_PATTERN.match(value):
             raise ValueError("phone_number must be in E.164 format, e.g. +14155552671")
         return value
+
+
+class PreferredLanguageUpdate(BaseModel):
+    preferred_language: Language

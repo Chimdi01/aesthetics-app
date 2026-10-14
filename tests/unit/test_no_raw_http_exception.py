@@ -21,9 +21,6 @@ APP_ROOT = Path(__file__).resolve().parents[2] / "app"
 # listed here no longer needs to be, or a file not listed here does),
 # the test below fails either way, so it can't silently go stale.
 _NOT_YET_MIGRATED = {
-    # Batch 1: auth and security.
-    "security.py",
-    "routers/auth.py",
     # Batch 2: bookings, reviews and messages.
     "booking_access.py",
     "routers/bookings.py",

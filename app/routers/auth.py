@@ -19,7 +19,7 @@ careful about that — see the handler itself).
 import logging
 from datetime import UTC, datetime
 
-from fastapi import APIRouter, Depends, HTTPException, Request, status
+from fastapi import APIRouter, Depends, Request, status
 from fastapi.security import OAuth2PasswordRequestForm
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -28,6 +28,7 @@ from app.config import settings
 from app.database import get_db
 from app.email import send_email
 from app.email_tokens import get_valid_email_token, invalidate_pending_tokens, issue_email_token
+from app.errors import AppError, ErrorCode
 from app.login_lockout import is_locked_out, record_failed_login, record_successful_login
 from app.mfa_challenge import get_valid_mfa_challenge, issue_mfa_challenge
 from app.models.email_token import EmailTokenPurpose
@@ -82,8 +83,11 @@ async def login(
     result = await db.execute(select(User).where(User.email == normalized_email))
     user = result.scalar_one_or_none()
 
-    credentials_error = HTTPException(
+    # One object for both the locked-out and wrong-password branches, so
+    # the two responses (error_code included) can't drift apart.
+    credentials_error = AppError(
         status_code=status.HTTP_401_UNAUTHORIZED,
+        error_code=ErrorCode.invalid_credentials,
         detail="Incorrect email or password",
         headers={"WWW-Authenticate": "Bearer"},
     )
@@ -117,7 +121,11 @@ async def login(
         # this on every subsequent request too, so even a token issued
         # before deactivation stops working immediately.
         logger.warning("Login rejected for deactivated account: %s", user.id)
-        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="This account has been deactivated")
+        raise AppError(
+            status_code=status.HTTP_403_FORBIDDEN,
+            error_code=ErrorCode.account_deactivated,
+            detail="This account has been deactivated",
+        )
 
     # Password (and account-active) checks are done — the lockout
     # counter resets here regardless of whether 2FA, below, then also
@@ -146,16 +154,21 @@ async def login(
 # gets, not less.
 @limiter.limit("5/minute")
 async def verify_2fa(request: Request, payload: Verify2FARequest, db: AsyncSession = Depends(get_db)):
+    invalid_challenge = AppError(
+        status_code=status.HTTP_401_UNAUTHORIZED,
+        error_code=ErrorCode.unauthenticated,
+        detail="Invalid or expired login challenge",
+    )
     challenge = await get_valid_mfa_challenge(db, payload.mfa_token)
     if challenge is None:
-        raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Invalid or expired login challenge")
+        raise invalid_challenge
 
     user = await db.get(User, challenge.user_id)
     if user is None or not user.is_active or not user.totp_enabled:
         # Mirrors /refresh's own re-check of is_active — an account
         # deactivated (or that's had 2FA disabled) in the few minutes
         # between /login and this call shouldn't be able to complete it.
-        raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Invalid or expired login challenge")
+        raise invalid_challenge
 
     code_valid = False
     if user.totp_secret_encrypted is not None:
@@ -167,7 +180,9 @@ async def verify_2fa(request: Request, payload: Verify2FARequest, db: AsyncSessi
 
     if not code_valid:
         logger.warning("Invalid 2FA code for user %s", user.id)
-        raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Invalid code")
+        raise AppError(
+            status_code=status.HTTP_401_UNAUTHORIZED, error_code=ErrorCode.invalid_code, detail="Invalid code"
+        )
 
     # Single-use: the challenge is spent the moment a valid code clears
     # it, whether or not the rest of this request somehow fails later.
@@ -183,7 +198,11 @@ async def verify_2fa(request: Request, payload: Verify2FARequest, db: AsyncSessi
 async def refresh_access_token(payload: RefreshRequest, db: AsyncSession = Depends(get_db)):
     stored = await get_valid_refresh_token(db, payload.refresh_token)
     if stored is None:
-        raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Invalid or expired refresh token")
+        raise AppError(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            error_code=ErrorCode.unauthenticated,
+            detail="Invalid or expired refresh token",
+        )
 
     user = await db.get(User, stored.user_id)
     if user is None or not user.is_active:
@@ -193,7 +212,11 @@ async def refresh_access_token(payload: RefreshRequest, db: AsyncSession = Depen
         # otherwise deactivation would only bite once the current access
         # token's own short expiry caught up with it.
         logger.warning("Refresh rejected for deactivated/missing account: %s", stored.user_id)
-        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="This account has been deactivated")
+        raise AppError(
+            status_code=status.HTTP_403_FORBIDDEN,
+            error_code=ErrorCode.account_deactivated,
+            detail="This account has been deactivated",
+        )
 
     # Rotate: the presented token is single-use. Revoking it here (not
     # just reading it, which get_valid_refresh_token already did read-only)
@@ -235,13 +258,18 @@ async def verify_email(payload: VerifyEmailRequest, db: AsyncSession = Depends(g
     """No auth required — this is reached by clicking a link in an
     email, not from an already-authenticated session (signup's own
     returned tokens notwithstanding; the link has to work on its own)."""
+    invalid_link = AppError(
+        status_code=status.HTTP_400_BAD_REQUEST,
+        error_code=ErrorCode.token_invalid_or_expired,
+        detail="Invalid or expired verification link",
+    )
     stored = await get_valid_email_token(db, payload.token, EmailTokenPurpose.verify_email)
     if stored is None:
-        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Invalid or expired verification link")
+        raise invalid_link
 
     user = await db.get(User, stored.user_id)
     if user is None:
-        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Invalid or expired verification link")
+        raise invalid_link
 
     stored.used_at = datetime.now(UTC)
     user.email_verified = True
@@ -257,7 +285,11 @@ async def resend_verification(
     request: Request, current_user: User = Depends(get_current_user), db: AsyncSession = Depends(get_db)
 ):
     if current_user.email_verified:
-        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Email is already verified")
+        raise AppError(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            error_code=ErrorCode.invalid_state,
+            detail="Email is already verified",
+        )
 
     # Invalidate any earlier still-pending verification link before
     # issuing a new one — only the one just sent should ever work.
@@ -308,13 +340,18 @@ async def forgot_password(request: Request, payload: ForgotPasswordRequest, db: 
 
 @router.post("/reset-password", status_code=status.HTTP_204_NO_CONTENT)
 async def reset_password(payload: ResetPasswordRequest, db: AsyncSession = Depends(get_db)):
+    invalid_link = AppError(
+        status_code=status.HTTP_400_BAD_REQUEST,
+        error_code=ErrorCode.token_invalid_or_expired,
+        detail="Invalid or expired reset link",
+    )
     stored = await get_valid_email_token(db, payload.token, EmailTokenPurpose.reset_password)
     if stored is None:
-        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Invalid or expired reset link")
+        raise invalid_link
 
     user = await db.get(User, stored.user_id)
     if user is None:
-        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Invalid or expired reset link")
+        raise invalid_link
 
     stored.used_at = datetime.now(UTC)
     user.hashed_password = await hash_password(payload.new_password)

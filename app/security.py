@@ -19,7 +19,7 @@ import uuid
 from datetime import UTC, datetime, timedelta
 
 import jwt
-from fastapi import Depends, HTTPException, status
+from fastapi import Depends, status
 from fastapi.security import OAuth2PasswordBearer
 from passlib.context import CryptContext
 from sqlalchemy import select
@@ -92,8 +92,9 @@ def decode_access_token(token: str) -> dict:
 async def get_current_user(
     token: str = Depends(oauth2_scheme), db: AsyncSession = Depends(get_db)
 ) -> User:
-    credentials_error = HTTPException(
+    credentials_error = AppError(
         status_code=status.HTTP_401_UNAUTHORIZED,
+        error_code=ErrorCode.unauthenticated,
         detail="Could not validate credentials",
         headers={"WWW-Authenticate": "Bearer"},
     )
@@ -127,7 +128,11 @@ async def get_current_user(
         # account was deactivated must stop working immediately, not
         # keep granting access until it expires on its own.
         logger.warning("Rejected request from deactivated account: %s", user.id)
-        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="This account has been deactivated")
+        raise AppError(
+            status_code=status.HTTP_403_FORBIDDEN,
+            error_code=ErrorCode.account_deactivated,
+            detail="This account has been deactivated",
+        )
     logger.debug("Authenticated user %s", user.id)
     return user
 
@@ -141,7 +146,7 @@ async def get_current_admin(current_user: User = Depends(get_current_user)) -> U
     self-pass."""
     if current_user.role != UserRole.admin:
         logger.warning("User %s (role=%s) attempted an admin-only action", current_user.id, current_user.role.value)
-        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Admins only")
+        raise AppError(status_code=status.HTTP_403_FORBIDDEN, error_code=ErrorCode.forbidden, detail="Admins only")
     return current_user
 
 
@@ -169,7 +174,7 @@ async def get_current_provider_profile(
     profile = result.scalar_one_or_none()
     if not profile:
         raise AppError(
-            status_code=404,
+            status_code=status.HTTP_404_NOT_FOUND,
             error_code=ErrorCode.provider_profile_required,
             detail="You don't have a provider profile yet",
         )

@@ -4,11 +4,21 @@ get_current_user/get_current_provider_profile directly since those need a live
 request + DB session; that behavior is covered by the regression tests
 in tests/regression/test_providers.py instead.
 """
+import uuid
+
 import jwt
 import pytest
 
 from app.config import settings
-from app.security import create_access_token, decode_access_token, hash_password, verify_password
+from app.errors import AppError, ErrorCode
+from app.models.user import User, UserRole
+from app.security import (
+    create_access_token,
+    decode_access_token,
+    get_current_admin,
+    hash_password,
+    verify_password,
+)
 
 
 async def test_hash_password_roundtrip():
@@ -86,3 +96,17 @@ def test_new_tokens_are_always_signed_with_the_current_key_not_a_previous_one(mo
     # Decodable with ONLY the current key — proves create_access_token
     # never accidentally signs with a "previous" key.
     jwt.decode(token, "current-key", algorithms=[settings.jwt_algorithm])
+
+
+async def test_get_current_admin_rejects_non_admin_with_forbidden_code():
+    customer = User(id=uuid.uuid4(), role=UserRole.customer)
+    with pytest.raises(AppError) as exc_info:
+        await get_current_admin(customer)
+    assert exc_info.value.status_code == 403
+    assert exc_info.value.error_code == ErrorCode.forbidden
+    assert exc_info.value.detail == "Admins only"
+
+
+async def test_get_current_admin_returns_admin_unchanged():
+    admin = User(id=uuid.uuid4(), role=UserRole.admin)
+    assert await get_current_admin(admin) is admin

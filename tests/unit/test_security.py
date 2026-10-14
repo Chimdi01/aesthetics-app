@@ -1,6 +1,6 @@
 """
 Pure logic in app/security.py — no DB, no HTTP. These don't exercise
-get_current_user/get_current_provider directly since those need a live
+get_current_user/get_current_provider_profile directly since those need a live
 request + DB session; that behavior is covered by the regression tests
 in tests/regression/test_providers.py instead.
 """

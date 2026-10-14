@@ -16,6 +16,7 @@ from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.audit_log import record_audit_log
+from app.capabilities import get_capabilities
 from app.database import get_db
 from app.models.audit_log import AuditAction, AuditLog, AuditTargetType
 from app.models.identity_verification import IdentityVerification, VerificationStatus
@@ -231,7 +232,7 @@ async def set_user_active_status(
     await db.commit()
     await db.refresh(user)
     logger.info("User %s active status set to %s by admin=%s", user_id, payload.is_active, current_admin.id)
-    return user
+    return UserPublic.from_user(user, await get_capabilities(db, user))
 
 
 @router.patch("/providers/{profile_id}/status", response_model=ProviderProfilePublic)

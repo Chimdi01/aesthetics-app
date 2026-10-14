@@ -107,12 +107,18 @@ async def test_set_availability_without_token_returns_401(client):
     assert response.status_code == 401
 
 
-async def test_set_availability_as_customer_returns_403(client):
+async def test_set_availability_as_customer_with_no_provider_profile_returns_404(client):
+    # Role no longer gates this (see CLAUDE.md's Roles convention) — a
+    # customer with no ProviderProfile hits the exact same "no profile
+    # yet" case as a provider-role account with no profile
+    # (test_set_availability_without_provider_profile_returns_404
+    # below), not a separate 403 "wrong role" case. This used to
+    # assert 403; that was role-based, this is resource-based.
     customer_headers = await _create_customer_headers(client)
     response = await client.put(
         "/v1/providers/me/availability", json={"schedule": []}, headers=customer_headers
     )
-    assert response.status_code == 403
+    assert response.status_code == 404
 
 
 async def test_set_availability_without_provider_profile_returns_404(client):

@@ -15,7 +15,7 @@ from datetime import datetime
 from pydantic import BaseModel, ConfigDict, EmailStr, Field, field_validator
 
 from app.locale import Language
-from app.models.user import UserRole
+from app.models.user import User, UserRole
 
 # E.164: a leading "+", then 1-15 digits, the first of which can't be 0.
 # Not validating "is this a real, reachable number" (that needs an SMS
@@ -76,7 +76,28 @@ class UserPublic(BaseModel):
     # via UserSummary below.
     phone_number: str | None
     preferred_language: str
+    # What this account can actually do, derived from live state —
+    # see app/capabilities.py and CLAUDE.md's Roles convention. Not an
+    # ORM attribute, so from_attributes can't fill it in automatically
+    # — every call site builds this via from_user() below instead of
+    # UserPublic.model_validate(user).
+    capabilities: list[str]
     created_at: datetime
+
+    @classmethod
+    def from_user(cls, user: User, capabilities: list[str]) -> "UserPublic":
+        return cls(
+            id=user.id,
+            email=user.email,
+            full_name=user.full_name,
+            role=user.role,
+            is_active=user.is_active,
+            email_verified=user.email_verified,
+            phone_number=user.phone_number,
+            preferred_language=user.preferred_language,
+            capabilities=capabilities,
+            created_at=user.created_at,
+        )
 
 
 class UserSummary(BaseModel):

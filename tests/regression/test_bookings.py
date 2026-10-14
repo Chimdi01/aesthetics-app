@@ -267,10 +267,15 @@ async def test_list_as_provider_without_profile_returns_404(client):
     assert response.status_code == 404
 
 
-async def test_list_as_provider_as_customer_role_returns_403(client):
+async def test_list_as_provider_as_customer_with_no_provider_profile_returns_404(client):
+    # Role no longer gates this (see CLAUDE.md's Roles convention) — a
+    # customer with no ProviderProfile hits the same "no profile yet"
+    # case as the provider-role-with-no-profile test above, not a
+    # separate 403 "wrong role" case. This used to assert 403; that
+    # was role-based, this is resource-based.
     customer_headers = await _create_customer_headers(client)
     response = await client.get("/v1/bookings/as-provider", headers=customer_headers)
-    assert response.status_code == 403
+    assert response.status_code == 404
 
 
 async def test_provider_can_confirm_then_complete_booking(client):

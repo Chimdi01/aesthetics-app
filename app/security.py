@@ -1,10 +1,13 @@
 """
 Everything related to "who is this request from" lives here: password
 hashing (shared by user creation and login), JWT creation/verification,
-and the `get_current_user`/`get_current_provider`/`get_current_provider_profile`
+and the `get_current_user`/`get_current_admin`/`get_current_provider_profile`
 dependency chain that protected routes use to pull the authenticated
 user (and, where relevant, their own ProviderProfile row) out of the
-request.
+request. "Provider" means "has a ProviderProfile row", not a role
+value — see get_current_provider_profile and CLAUDE.md's Roles
+convention; `role` is a signup-time default only, never an access gate
+except for `admin`, which stays exclusive.
 
 Logging rule for this whole file: never log a password, a raw JWT, or an
 Authorization header value — only ever a user id (and only once it's
@@ -123,22 +126,13 @@ async def get_current_user(
     return user
 
 
-async def get_current_provider(current_user: User = Depends(get_current_user)) -> User:
-    """A dependency built on top of another dependency: reuses
-    get_current_user's work, then adds a role check on top. Any route
-    that needs 'must be logged in AND be a provider' just depends on
-    this instead of re-checking the role itself."""
-    if current_user.role != UserRole.provider:
-        logger.warning("User %s (role=%s) attempted a provider-only action", current_user.id, current_user.role.value)
-        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Providers only")
-    return current_user
-
-
 async def get_current_admin(current_user: User = Depends(get_current_user)) -> User:
-    """Same pattern as get_current_provider. There is no API path that
-    grants the admin role (see UserCreate.reject_admin_signup) — admin
-    accounts only exist via a direct DB update by the operator, which
-    makes this check meaningful rather than a gate anyone could self-pass."""
+    """Unlike provider-ness, admin IS a role check — admin stays an
+    exclusive, non-additive account type (see CLAUDE.md). There is no
+    API path that grants the admin role (see UserCreate.reject_admin_signup)
+    — admin accounts only exist via a direct DB update by the operator,
+    which makes this check meaningful rather than a gate anyone could
+    self-pass."""
     if current_user.role != UserRole.admin:
         logger.warning("User %s (role=%s) attempted an admin-only action", current_user.id, current_user.role.value)
         raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Admins only")
@@ -146,12 +140,16 @@ async def get_current_admin(current_user: User = Depends(get_current_user)) -> U
 
 
 async def get_current_provider_profile(
-    current_user: User = Depends(get_current_provider), db: AsyncSession = Depends(get_db)
+    current_user: User = Depends(get_current_user), db: AsyncSession = Depends(get_db)
 ) -> ProviderProfile:
-    """Another link in the same dependency chain: resolves the
-    authenticated provider's own ProviderProfile row. Every '/me/...'
-    provider-owned endpoint (availability, portfolio) depends on this
-    directly instead of each re-querying 'my profile' by hand.
+    """The ONE 'prove you're a provider' dependency — 'provider' means
+    'has a ProviderProfile row', not role == provider; role is a
+    signup-time default only, never an access gate (see CLAUDE.md).
+    Every provider-only route depends on this directly (it needs the
+    profile anyway, so there's no separate 'just check the role' step
+    to layer underneath — that used to be get_current_provider, now
+    removed: it had no caller left that didn't also need the profile
+    itself, and querying twice to get it would be redundant).
 
     Deliberately does NOT check profile.is_active. A deactivated profile
     is hidden from search and can't take new bookings (see

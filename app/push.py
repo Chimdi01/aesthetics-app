@@ -27,8 +27,17 @@ from app.config import settings
 logger = logging.getLogger(__name__)
 
 
-async def send_push(device_token: str, title: str, body: str) -> None:
+async def send_push(device_token: str, title: str, body: str, audience: str) -> None:
+    # audience ("customer" or "provider" — see app/capabilities.py and
+    # CLAUDE.md's Roles convention) rides in the payload's data portion
+    # alongside title/body, never shown to the user — it's for the
+    # client app to decide which in-app view a tap should open, now
+    # that one account can hold both capabilities. Not meaningful for
+    # the plain-text email/SMS channels (app/email.py, app/sms.py),
+    # which have no structured data portion and are also used by
+    # flows with no customer/provider context at all (e.g. email
+    # verification) — so it's only threaded through here.
     if settings.push_backend == "console":
-        logger.info("Push to %s | %s: %s", device_token, title, body)
+        logger.info("Push to %s | %s: %s (audience=%s)", device_token, title, body, audience)
         return
     raise NotImplementedError(f"Unknown push backend: {settings.push_backend!r}")

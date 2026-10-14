@@ -28,6 +28,11 @@ from sqlalchemy.pool import NullPool
 
 from app.config import settings
 from app.database import Base, get_db
+from app.db_triggers import (
+    ADMIN_PROVIDER_EXCLUSIVITY_DROP_TRIGGER_SQL,
+    ADMIN_PROVIDER_EXCLUSIVITY_FUNCTION_SQL,
+    ADMIN_PROVIDER_EXCLUSIVITY_TRIGGER_SQL,
+)
 from app.main import app
 from app.models import (  # noqa: F401  (import so Base knows about the tables)
     audit_log,
@@ -95,6 +100,13 @@ def _prepare_test_database():
             # nothing about the failure points at "your test DB is stale".
             await conn.run_sync(Base.metadata.drop_all)
             await conn.run_sync(Base.metadata.create_all)
+            # Triggers/functions aren't part of SQLAlchemy's ORM
+            # metadata, so create_all() above never creates this one —
+            # see app/db_triggers.py's docstring. Same SQL the real
+            # migration runs, kept in one place so the two can't drift.
+            await conn.execute(text(ADMIN_PROVIDER_EXCLUSIVITY_FUNCTION_SQL))
+            await conn.execute(text(ADMIN_PROVIDER_EXCLUSIVITY_DROP_TRIGGER_SQL))
+            await conn.execute(text(ADMIN_PROVIDER_EXCLUSIVITY_TRIGGER_SQL))
 
     asyncio.run(_create_schema())
     yield

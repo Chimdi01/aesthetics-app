@@ -62,9 +62,14 @@ async def send_message(
     provider_profile = await get_owning_provider_profile(db, booking)
     recipient_id = provider_profile.user_id if is_customer else booking.customer_id
     recipient = await db.get(User, recipient_id)
+    # The sender's side determines the recipient's side: if the sender
+    # is the customer, the recipient is the provider, and vice versa.
+    audience = "provider" if is_customer else "customer"
     try:
         if recipient is not None:
-            await notify_new_message(db, recipient, current_user.full_name, payload.body, is_first_message)
+            await notify_new_message(
+                db, recipient, current_user.full_name, payload.body, is_first_message, audience
+            )
     except Exception:
         # A notification failure must never fail the request that
         # already succeeded (the message is sent and persisted) — same

@@ -33,7 +33,7 @@ from app.models.provider_profile import ProviderProfile
 from app.models.user import User
 from app.notifications import notify_booking_status_changed
 from app.schemas.booking import BookingCreate, BookingPublic, BookingStatusUpdate
-from app.security import get_current_provider, get_current_user
+from app.security import get_current_provider_profile, get_current_user
 
 logger = logging.getLogger(__name__)
 
@@ -103,13 +103,9 @@ async def list_my_bookings_as_customer(
 
 @router.get("/as-provider", response_model=list[BookingPublic])
 async def list_my_bookings_as_provider(
-    db: AsyncSession = Depends(get_db), current_user: User = Depends(get_current_provider)
+    db: AsyncSession = Depends(get_db),
+    provider_profile: ProviderProfile = Depends(get_current_provider_profile),
 ):
-    result = await db.execute(select(ProviderProfile).where(ProviderProfile.user_id == current_user.id))
-    provider_profile = result.scalar_one_or_none()
-    if not provider_profile:
-        raise HTTPException(status_code=404, detail="You don't have a provider profile yet")
-
     bookings = await db.execute(
         select(Booking).where(Booking.provider_profile_id == provider_profile.id).order_by(Booking.scheduled_at)
     )
@@ -174,15 +170,19 @@ async def update_booking_status(
         booking.id, previous_status.value, new_status.value, current_user.id,
     )
 
-    # Notify the OTHER party — whoever didn't make this change.
+    # Notify the OTHER party — whoever didn't make this change. Same
+    # audience reasoning as app/routers/messages.py: the actor's side
+    # determines the recipient's side.
     try:
         if is_customer:
             provider_profile = await get_owning_provider_profile(db, booking)
             recipient = await db.get(User, provider_profile.user_id)
+            audience = "provider"
         else:
             recipient = await db.get(User, booking.customer_id)
+            audience = "customer"
         if recipient is not None:
-            await notify_booking_status_changed(db, recipient, new_status.value)
+            await notify_booking_status_changed(db, recipient, new_status.value, audience)
     except Exception:
         logger.exception("Failed to send booking-status-changed notification for booking %s", booking.id)
 

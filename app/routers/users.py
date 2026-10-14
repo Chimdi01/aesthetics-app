@@ -15,6 +15,7 @@ from fastapi import APIRouter, Depends, HTTPException, Request
 from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.capabilities import get_capabilities
 from app.config import settings
 from app.database import get_db
 from app.email import send_email
@@ -105,7 +106,7 @@ async def create_user(request: Request, payload: UserCreate, db: AsyncSession = 
         # fallback if this is the branch that ran.
         logger.exception("Failed to send verification email to new user %s", user.id)
 
-    return user
+    return UserPublic.from_user(user, await get_capabilities(db, user))
 
 
 @router.patch("/me/phone-number", response_model=UserPublic)
@@ -125,7 +126,7 @@ async def update_my_phone_number(
     logger.info(
         "User %s %s their phone number", current_user.id, "set" if payload.phone_number else "cleared"
     )
-    return current_user
+    return UserPublic.from_user(current_user, await get_capabilities(db, current_user))
 
 
 @router.patch("/me/preferred-language", response_model=UserPublic)
@@ -140,7 +141,7 @@ async def update_my_preferred_language(
     await db.commit()
     await db.refresh(current_user)
     logger.info("User %s set preferred_language to %s", current_user.id, current_user.preferred_language)
-    return current_user
+    return UserPublic.from_user(current_user, await get_capabilities(db, current_user))
 
 
 @router.get("/me/notification-preferences", response_model=NotificationPreferencesPublic)
@@ -361,5 +362,5 @@ async def get_user(
     if not user:
         raise HTTPException(status_code=404, detail="User not found")
     if user.id == current_user.id or current_user.role == UserRole.admin:
-        return UserPublic.model_validate(user)
+        return UserPublic.from_user(user, await get_capabilities(db, user))
     return UserSummary.model_validate(user)

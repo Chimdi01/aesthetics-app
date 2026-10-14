@@ -241,3 +241,49 @@ async def test_update_notification_preferences_message_frequency(client):
 async def test_notification_preferences_without_token_returns_401(client):
     response = await client.get("/v1/users/me/notification-preferences")
     assert response.status_code == 401
+
+
+# --- capabilities (see app/capabilities.py and CLAUDE.md's Roles convention) ---
+
+
+async def test_new_customer_signup_has_customer_capability_only(client):
+    created = (await register_user(client, "plaincustomer2@example.com")).json()
+    assert created["capabilities"] == ["customer"]
+
+
+async def test_creating_a_provider_profile_adds_the_provider_capability(client):
+    created = (
+        await register_user(client, "becomesprovider@example.com", role="provider", full_name="Jane")
+    ).json()
+    token = await login(client, "becomesprovider@example.com")
+    headers = {"Authorization": f"Bearer {token}"}
+
+    # No ProviderProfile yet — just the role, which no longer means
+    # anything on its own (see CLAUDE.md's Roles convention).
+    fetched = await client.get(f"/v1/users/{created['id']}", headers=headers)
+    assert fetched.json()["capabilities"] == ["customer"]
+
+    await client.post(
+        "/v1/providers/",
+        json={
+            "business_name": "Jane's Studio",
+            "currency": "GBP",
+            "timezone": "Europe/London",
+            "country": "GB",
+            "categories": ["hair"],
+        },
+        headers=headers,
+    )
+
+    fetched = await client.get(f"/v1/users/{created['id']}", headers=headers)
+    assert set(fetched.json()["capabilities"]) == {"customer", "provider"}
+
+
+async def test_admin_has_no_customer_or_provider_capabilities(client):
+    created = (await register_user(client, "capabilitiesadmin@example.com")).json()
+    await _promote_to_admin("capabilitiesadmin@example.com")
+    token = await login(client, "capabilitiesadmin@example.com")
+    fetched = await client.get(
+        f"/v1/users/{created['id']}", headers={"Authorization": f"Bearer {token}"}
+    )
+    assert fetched.json()["capabilities"] == []

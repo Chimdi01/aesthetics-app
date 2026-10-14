@@ -28,7 +28,7 @@ from app.database import get_db
 from app.models.payout_account import ProviderPayoutAccount
 from app.models.provider_profile import ProviderProfile
 from app.models.review import Review
-from app.models.user import User
+from app.models.user import User, UserRole
 from app.payments.payment_provider import provider_for_country
 from app.schemas.payout_account import PayoutAccountPublic
 from app.schemas.provider_profile import (
@@ -36,7 +36,7 @@ from app.schemas.provider_profile import (
     ProviderProfilePublic,
     ProviderSearchResult,
 )
-from app.security import get_current_provider, get_current_provider_profile
+from app.security import get_current_provider_profile, get_current_user
 
 logger = logging.getLogger(__name__)
 
@@ -47,8 +47,16 @@ router = APIRouter(prefix="/providers", tags=["providers"])
 async def create_provider_profile(
     payload: ProviderProfileCreate,
     db: AsyncSession = Depends(get_db),
-    current_user: User = Depends(get_current_provider),
+    current_user: User = Depends(get_current_user),
 ):
+    """Any non-admin user — a customer becoming a provider is the same
+    call as a brand-new account's first profile; there's no separate
+    'become a provider' endpoint. Admin and provider are exclusive
+    (see CLAUDE.md): an admin account can never hold a ProviderProfile,
+    so this is refused regardless of whether one already exists yet."""
+    if current_user.role == UserRole.admin:
+        raise HTTPException(status_code=403, detail="Admin accounts cannot hold a provider profile")
+
     existing = await db.execute(
         select(ProviderProfile).where(ProviderProfile.user_id == current_user.id)
     )

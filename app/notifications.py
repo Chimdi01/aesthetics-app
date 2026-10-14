@@ -45,6 +45,7 @@ import uuid
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.capabilities import get_capabilities
 from app.email import send_email
 from app.models.device_token import DeviceToken
 from app.models.notification_preference import MessageNotificationFrequency, NotificationPreference
@@ -54,6 +55,19 @@ from app.push import send_push
 from app.sms import send_sms
 
 logger = logging.getLogger(__name__)
+
+
+async def _infer_audience(db: AsyncSession, recipient: User) -> str:
+    """For events with no single booking/thread tying the recipient to
+    one side (verification, report decisions — see each notify_*'s own
+    docstring for why) — "provider" if they currently have a
+    ProviderProfile, else "customer". Not perfectly precise for a
+    genuinely dual-capability recipient (there's no "both" audience),
+    but there's no cleaner per-event signal available for these two;
+    notify_new_message/notify_booking_status_changed use the real
+    per-booking context instead, via their own audience parameter."""
+    capabilities = await get_capabilities(db, recipient)
+    return "provider" if "provider" in capabilities else "customer"
 
 
 async def _get_preferences(db: AsyncSession, user_id: uuid.UUID) -> NotificationPreference:
@@ -70,7 +84,7 @@ async def _get_preferences(db: AsyncSession, user_id: uuid.UUID) -> Notification
     return NotificationPreference()
 
 
-async def _dispatch(db: AsyncSession, user: User, subject: str, body: str) -> None:
+async def _dispatch(db: AsyncSession, user: User, subject: str, body: str, audience: str) -> None:
     await send_email(user.email, subject, body)
     if user.phone_number:
         await send_sms(user.phone_number, body)
@@ -78,7 +92,7 @@ async def _dispatch(db: AsyncSession, user: User, subject: str, body: str) -> No
     result = await db.execute(select(DeviceToken).where(DeviceToken.user_id == user.id))
     for device in result.scalars().all():
         try:
-            await send_push(device.token, subject, body)
+            await send_push(device.token, subject, body, audience)
         except Exception:
             # Per-device, not per-recipient: one stale token failing
             # must not stop the same push reaching this user's OTHER
@@ -98,31 +112,47 @@ def _should_notify_new_message(prefs: NotificationPreference, is_first_message: 
 
 
 async def notify_new_message(
-    db: AsyncSession, recipient: User, sender_name: str, message_body: str, is_first_message: bool
+    db: AsyncSession,
+    recipient: User,
+    sender_name: str,
+    message_body: str,
+    is_first_message: bool,
+    audience: str,
 ) -> None:
+    """audience ("customer" or "provider") is caller-supplied, not
+    inferred — the caller (app/routers/messages.py) already knows
+    which side of THIS booking the recipient is on; a dual-capability
+    user could be on either side depending on the booking, so there's
+    no context-free way to derive it here."""
     prefs = await _get_preferences(db, recipient.id)
     if not _should_notify_new_message(prefs, is_first_message):
         return
     subject, body = render(
         "new_message", recipient.preferred_language, sender_name=sender_name, message_body=message_body
     )
-    await _dispatch(db, recipient, subject, body)
+    await _dispatch(db, recipient, subject, body, audience)
 
 
-async def notify_booking_status_changed(db: AsyncSession, recipient: User, new_status: str) -> None:
+async def notify_booking_status_changed(db: AsyncSession, recipient: User, new_status: str, audience: str) -> None:
+    """audience is caller-supplied — same reasoning as
+    notify_new_message above (app/routers/bookings.py already knows
+    which side of this booking the recipient is on)."""
     prefs = await _get_preferences(db, recipient.id)
     if not prefs.notify_on_booking_status_change:
         return
     subject, body = render("booking_status_changed", recipient.preferred_language, new_status=new_status)
-    await _dispatch(db, recipient, subject, body)
+    await _dispatch(db, recipient, subject, body, audience)
 
 
 async def notify_new_review(db: AsyncSession, recipient: User, rating: int) -> None:
+    # audience is always "provider" here — a review's recipient is,
+    # by construction, the provider who was reviewed, never the
+    # customer who left it.
     prefs = await _get_preferences(db, recipient.id)
     if not prefs.notify_on_new_review:
         return
     subject, body = render("new_review", recipient.preferred_language, rating=rating)
-    await _dispatch(db, recipient, subject, body)
+    await _dispatch(db, recipient, subject, body, audience="provider")
 
 
 async def notify_verification_decision(
@@ -135,7 +165,7 @@ async def notify_verification_decision(
         subject, body = render("verification_approved", recipient.preferred_language)
     else:
         subject, body = render("verification_rejected", recipient.preferred_language, reason=rejection_reason)
-    await _dispatch(db, recipient, subject, body)
+    await _dispatch(db, recipient, subject, body, await _infer_audience(db, recipient))
 
 
 async def notify_report_decision(db: AsyncSession, recipient: User, status: str) -> None:
@@ -149,4 +179,4 @@ async def notify_report_decision(db: AsyncSession, recipient: User, status: str)
     if not prefs.notify_on_report_decision:
         return
     subject, body = render("report_decision", recipient.preferred_language, status=status)
-    await _dispatch(db, recipient, subject, body)
+    await _dispatch(db, recipient, subject, body, await _infer_audience(db, recipient))

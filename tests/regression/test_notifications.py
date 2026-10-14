@@ -221,6 +221,27 @@ async def test_message_notification_includes_push_when_a_device_is_registered(cl
     assert response.status_code == 201
     assert "providers-device-token" in caplog.text
     assert "Push to" in caplog.text
+    # The sender (customer) determines the recipient's (provider's)
+    # audience — see app/routers/messages.py.
+    assert "audience=provider" in caplog.text
+
+
+async def test_message_notification_from_provider_includes_customer_audience(client, caplog):
+    # The reverse direction of the test above — the provider is now
+    # the sender, so the customer recipient's audience is "customer".
+    profile, provider_headers = await _create_provider_with_profile(client, "replyprovider@example.com")
+    customer_headers = await _create_customer_headers(client, "replycustomer@example.com")
+    await _register_device_token(client, customer_headers, "customers-device-token")
+    booking = await _create_booking(client, profile["id"], customer_headers)
+
+    caplog.clear()
+    with caplog.at_level("INFO"):
+        response = await client.post(
+            f"/v1/bookings/{booking['id']}/messages", json={"body": "on my way"}, headers=provider_headers
+        )
+    assert response.status_code == 201
+    assert "customers-device-token" in caplog.text
+    assert "audience=customer" in caplog.text
 
 
 async def test_message_notification_pushes_to_every_registered_device(client, caplog):
@@ -260,6 +281,7 @@ async def test_message_notification_has_no_push_without_a_registered_device(clie
 async def test_provider_confirming_booking_notifies_customer(client, caplog):
     profile, provider_headers = await _create_provider_with_profile(client, "confirm-provider@example.com")
     customer_headers = await _create_customer_headers(client, "confirm-customer@example.com")
+    await _register_device_token(client, customer_headers, "confirm-customer-device")
     booking = await _create_booking(client, profile["id"], customer_headers)
 
     caplog.clear()
@@ -270,11 +292,15 @@ async def test_provider_confirming_booking_notifies_customer(client, caplog):
     assert response.status_code == 200
     assert "confirm-customer@example.com" in caplog.text
     assert "Booking update" in caplog.text
+    # The provider made this change, so the customer is the recipient
+    # and the audience — see app/routers/bookings.py.
+    assert "audience=customer" in caplog.text
 
 
 async def test_customer_cancelling_booking_notifies_provider(client, caplog):
-    profile, _ = await _create_provider_with_profile(client, "cancel-provider@example.com")
+    profile, provider_headers = await _create_provider_with_profile(client, "cancel-provider@example.com")
     customer_headers = await _create_customer_headers(client, "cancel-customer@example.com")
+    await _register_device_token(client, provider_headers, "cancel-provider-device")
     booking = await _create_booking(client, profile["id"], customer_headers)
 
     caplog.clear()
@@ -284,6 +310,9 @@ async def test_customer_cancelling_booking_notifies_provider(client, caplog):
         )
     assert response.status_code == 200
     assert "cancel-provider@example.com" in caplog.text
+    # The customer made this change, so the provider is the recipient
+    # and the audience.
+    assert "audience=provider" in caplog.text
 
 
 async def test_disabling_booking_status_notifications(client, caplog):
@@ -307,6 +336,7 @@ async def test_disabling_booking_status_notifications(client, caplog):
 async def test_new_review_notifies_the_provider(client, caplog):
     profile, provider_headers = await _create_provider_with_profile(client, "review-provider@example.com")
     customer_headers = await _create_customer_headers(client, "review-customer@example.com")
+    await _register_device_token(client, provider_headers, "review-provider-device")
     booking = await _create_completed_booking(client, provider_headers, customer_headers, profile["id"])
 
     caplog.clear()
@@ -317,6 +347,8 @@ async def test_new_review_notifies_the_provider(client, caplog):
     assert response.status_code == 201
     assert "review-provider@example.com" in caplog.text
     assert "New review" in caplog.text
+    # A review's recipient is always the provider who was reviewed.
+    assert "audience=provider" in caplog.text
 
 
 async def test_disabling_review_notifications(client, caplog):
@@ -341,6 +373,7 @@ async def test_verification_approval_notifies_the_submitter(client, caplog):
     await register_user(client, "verify-me@example.com")
     token = await login(client, "verify-me@example.com")
     headers = {"Authorization": f"Bearer {token}"}
+    await _register_device_token(client, headers, "verify-me-device")
     submitted = (
         await client.post(
             "/v1/verification/me", files=_document_file(), data={"document_type": "passport"}, headers=headers
@@ -356,6 +389,31 @@ async def test_verification_approval_notifies_the_submitter(client, caplog):
     assert response.status_code == 200
     assert "verify-me@example.com" in caplog.text
     assert "Verification update" in caplog.text
+    # No booking/thread ties this event to one side, so audience is
+    # inferred from capabilities (see app/notifications.py's
+    # _infer_audience) — a plain customer with no ProviderProfile.
+    assert "audience=customer" in caplog.text
+
+
+async def test_verification_approval_for_a_provider_includes_provider_audience(client, caplog):
+    # Same event, but the submitter has a ProviderProfile — the other
+    # branch of _infer_audience.
+    _, headers = await _create_provider_with_profile(client, "verify-provider@example.com")
+    await _register_device_token(client, headers, "verify-provider-device")
+    submitted = (
+        await client.post(
+            "/v1/verification/me", files=_document_file(), data={"document_type": "passport"}, headers=headers
+        )
+    ).json()
+
+    admin_headers = await _create_admin_headers(client, "verify-provider-admin@example.com")
+    caplog.clear()
+    with caplog.at_level("INFO"):
+        response = await client.patch(
+            f"/v1/admin/verifications/{submitted['id']}", json={"status": "approved"}, headers=admin_headers
+        )
+    assert response.status_code == 200
+    assert "audience=provider" in caplog.text
 
 
 async def test_verification_rejection_notifies_the_submitter_with_reason(client, caplog):
@@ -387,6 +445,7 @@ async def test_verification_rejection_notifies_the_submitter_with_reason(client,
 async def test_report_resolution_notifies_the_reporter_not_the_reported_user(client, caplog):
     await register_user(client, "reporter@example.com")
     reporter_token = await login(client, "reporter@example.com")
+    await _register_device_token(client, {"Authorization": f"Bearer {reporter_token}"}, "reporter-device")
     target = (await register_user(client, "reported-target@example.com")).json()
 
     report = (
@@ -410,3 +469,6 @@ async def test_report_resolution_notifies_the_reporter_not_the_reported_user(cli
     # notify_report_decision docstring.
     assert "reported-target@example.com" not in caplog.text
     assert "Report update" in caplog.text
+    # The reporter is a plain customer with no ProviderProfile — see
+    # _infer_audience in app/notifications.py.
+    assert "audience=customer" in caplog.text

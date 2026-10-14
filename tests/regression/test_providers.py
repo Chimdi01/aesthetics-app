@@ -1,10 +1,21 @@
-from tests.conftest import login, register_user
+import pytest
+from sqlalchemy import text
+from sqlalchemy.exc import DBAPIError
+
+from tests.conftest import login, register_user, test_engine
 
 
 async def _create_provider(client, email="jane@example.com", password="secret123"):
     await register_user(client, email, password=password, role="provider", full_name="Jane Stylist")
     token = await login(client, email, password)
     return {"Authorization": f"Bearer {token}"}
+
+
+async def _promote_to_admin(email: str) -> None:
+    # Matches the real provisioning path (see CLAUDE.md) — no API
+    # grants the admin role, only a direct DB update.
+    async with test_engine.begin() as conn:
+        await conn.execute(text("UPDATE users SET role = 'admin' WHERE email = :email"), {"email": email})
 
 
 async def test_create_provider_profile_without_token_returns_401(client):
@@ -20,7 +31,11 @@ async def test_create_provider_profile_without_token_returns_401(client):
     assert response.status_code == 401
 
 
-async def test_create_provider_profile_as_customer_returns_403(client):
+async def test_create_provider_profile_as_existing_customer_succeeds(client):
+    # The "become a provider" path — no separate endpoint, just this
+    # same one, now open to any non-admin user (see CLAUDE.md's Roles
+    # convention). This used to assert 403; a customer becoming a
+    # provider is the intended behavior now, not an error case.
     await register_user(client, "cust@example.com", role="customer")
     token = await login(client, "cust@example.com")
     response = await client.post(
@@ -33,7 +48,50 @@ async def test_create_provider_profile_as_customer_returns_403(client):
         },
         headers={"Authorization": f"Bearer {token}"},
     )
+    assert response.status_code == 201
+
+
+async def test_create_provider_profile_as_admin_returns_403(client):
+    # Admin and provider are mutually exclusive (see CLAUDE.md) — an
+    # admin account can never hold a ProviderProfile.
+    await register_user(client, "admin@example.com", role="customer")
+    await _promote_to_admin("admin@example.com")
+    token = await login(client, "admin@example.com")
+    response = await client.post(
+        "/v1/providers/",
+        json={
+            "business_name": "Salon Co",
+            "currency": "GBP",
+            "timezone": "Europe/London", "country": "GB",
+            "categories": ["hair"],
+        },
+        headers={"Authorization": f"Bearer {token}"},
+    )
     assert response.status_code == 403
+
+
+async def test_promoting_a_provider_to_admin_is_refused_by_the_db_trigger(client):
+    # The other direction of the same exclusivity rule. The app itself
+    # already refuses an admin creating a ProviderProfile (the test
+    # above); THIS direction has no app code in the loop at all — admin
+    # promotion is a direct DB UPDATE, not an API call (see CLAUDE.md)
+    # — so it's enforced by a Postgres trigger instead (see
+    # alembic/versions/c20b1323c9c1_....py), exercised here the same
+    # way the real provisioning path would hit it.
+    headers = await _create_provider(client, "provider-to-admin@example.com")
+    await client.post(
+        "/v1/providers/",
+        json={
+            "business_name": "Studio",
+            "currency": "GBP",
+            "timezone": "Europe/London", "country": "GB",
+            "categories": ["hair"],
+        },
+        headers=headers,
+    )
+
+    with pytest.raises(DBAPIError):
+        await _promote_to_admin("provider-to-admin@example.com")
 
 
 async def test_create_provider_profile_success(client):

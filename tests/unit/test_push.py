@@ -10,10 +10,11 @@ from app.push import send_push
 
 async def test_console_backend_logs_the_push(caplog):
     with caplog.at_level("INFO"):
-        await send_push("fake-device-token", "New message", "Jane: hi there")
+        await send_push("fake-device-token", "New message", "Jane: hi there", "customer")
     assert "fake-device-token" in caplog.text
     assert "New message" in caplog.text
     assert "Jane: hi there" in caplog.text
+    assert "customer" in caplog.text
 
 
 async def test_unknown_backend_raises(monkeypatch):
@@ -21,4 +22,4 @@ async def test_unknown_backend_raises(monkeypatch):
 
     monkeypatch.setattr(settings, "push_backend", "fcm")
     with pytest.raises(NotImplementedError):
-        await send_push("fake-device-token", "title", "body")
+        await send_push("fake-device-token", "title", "body", "customer")

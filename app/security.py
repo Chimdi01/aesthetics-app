@@ -28,8 +28,10 @@ from starlette.concurrency import run_in_threadpool
 
 from app.config import settings
 from app.database import get_db
+from app.errors import AppError, ErrorCode
 from app.models.provider_profile import ProviderProfile
 from app.models.user import User, UserRole
+from app.request_context import current_user_id_var
 
 logger = logging.getLogger(__name__)
 
@@ -116,6 +118,10 @@ async def get_current_user(
     if user is None:
         logger.warning("Token valid but no matching user: %s", user_id)
         raise credentials_error
+    # Set as soon as we know who this is, even though the two checks
+    # below can still reject the request — a deactivated-account 403
+    # should still show the right user_id in its log line, not "-".
+    current_user_id_var.set(str(user.id))
     if not user.is_active:
         # Checked here, not just at login: a token issued before the
         # account was deactivated must stop working immediately, not
@@ -162,5 +168,9 @@ async def get_current_provider_profile(
     result = await db.execute(select(ProviderProfile).where(ProviderProfile.user_id == current_user.id))
     profile = result.scalar_one_or_none()
     if not profile:
-        raise HTTPException(status_code=404, detail="You don't have a provider profile yet")
+        raise AppError(
+            status_code=404,
+            error_code=ErrorCode.provider_profile_required,
+            detail="You don't have a provider profile yet",
+        )
     return profile

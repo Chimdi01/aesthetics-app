@@ -4,8 +4,10 @@ routers — not every individual log line (that would be brittle busywork),
 but the load-bearing pieces: a request gets a correlation id that comes
 back on the response, successful requests stay quiet at DEBUG (so real
 traffic volume doesn't flood production logs at INFO), errors surface at
-WARNING/ERROR regardless of path, and an authorization failure is logged
-rather than disappearing silently into just an HTTP 403.
+a level that reflects how notable the status code is (see
+app/main.py's log_requests: 401/404/422 at INFO, 403/409/429 at WARNING,
+5xx at ERROR), and an authorization failure is logged rather than
+disappearing silently into just an HTTP 403.
 """
 import logging
 from datetime import UTC
@@ -37,11 +39,26 @@ async def test_successful_request_is_logged_at_debug_not_info(client, caplog):
     assert any("GET /health -> 200" in record.message for record in caplog.records)
 
 
-async def test_client_error_response_is_logged_at_warning(client, caplog):
-    with caplog.at_level(logging.WARNING, logger="app.main"):
+async def test_not_found_response_is_logged_at_info(client, caplog):
+    # 404 is normal, expected churn (a bad/stale id), not something worth
+    # WARNING volume in production logs — see log_requests's
+    # _INFO_LEVEL_STATUS_CODES.
+    with caplog.at_level(logging.INFO, logger="app.main"):
         response = await client.get("/v1/providers/00000000-0000-0000-0000-000000000000")
     assert response.status_code == 404
-    assert any("-> 404" in record.message and record.levelname == "WARNING" for record in caplog.records)
+    assert any("-> 404" in record.message and record.levelname == "INFO" for record in caplog.records)
+
+
+async def test_conflict_response_is_logged_at_warning(client, caplog):
+    # 409 (duplicate resource) IS worth a closer look — see
+    # log_requests's _WARNING_LEVEL_STATUS_CODES.
+    await register_user(client, "dupe@example.com", password="secret123")
+    with caplog.at_level(logging.INFO, logger="app.main"):
+        response = await client.post(
+            "/v1/users/", json={"email": "dupe@example.com", "password": "secret123", "full_name": "Dupe"}
+        )
+    assert response.status_code == 409
+    assert any("-> 409" in record.message and record.levelname == "WARNING" for record in caplog.records)
 
 
 async def test_readiness_check_reports_database_ok(client):

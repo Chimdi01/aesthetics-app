@@ -76,7 +76,12 @@ async def test_locked_out_response_is_identical_to_a_normal_wrong_password(clien
     wrong_password_response = await _attempt_login(client, "neverregistered@example.com", "whatever")
 
     assert locked_response.status_code == wrong_password_response.status_code == 401
-    assert locked_response.json() == wrong_password_response.json()
+    # Compare minus request_id, which legitimately differs per request
+    # (see tests/regression/test_error_envelope.py's own version of this
+    # same check) — everything else must match exactly.
+    locked_body = {k: v for k, v in locked_response.json().items() if k != "request_id"}
+    wrong_password_body = {k: v for k, v in wrong_password_response.json().items() if k != "request_id"}
+    assert locked_body == wrong_password_body
 
 
 async def test_lockout_does_not_affect_other_accounts(client):

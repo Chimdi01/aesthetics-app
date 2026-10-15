@@ -11,7 +11,7 @@ afterward — you never manage that lifecycle by hand.
 import logging
 import uuid
 
-from fastapi import APIRouter, Depends, HTTPException, Request
+from fastapi import APIRouter, Depends, Request
 from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -20,6 +20,7 @@ from app.config import settings
 from app.database import get_db
 from app.email import send_email
 from app.email_tokens import issue_email_token
+from app.errors import AppError, ErrorCode
 from app.models.device_token import DeviceToken
 from app.models.email_token import EmailTokenPurpose
 from app.models.notification_preference import NotificationPreference
@@ -63,7 +64,7 @@ async def create_user(request: Request, payload: UserCreate, db: AsyncSession = 
     existing = await db.execute(select(User).where(User.email == payload.email))
     if existing.scalar_one_or_none():
         logger.info("Signup rejected, email already registered: %s", payload.email)
-        raise HTTPException(status_code=409, detail="Email already registered")
+        raise AppError(status_code=409, error_code=ErrorCode.duplicate_resource, detail="Email already registered")
 
     user = User(
         email=payload.email,
@@ -157,7 +158,7 @@ async def get_my_notification_preferences(
         # shipped (create_user always makes one) — but an account from
         # before it existed would otherwise 500 here instead of a clean
         # 404, which is a more honest answer than "the row evaporated".
-        raise HTTPException(status_code=404, detail="Notification preferences not found")
+        raise AppError(status_code=404, error_code=ErrorCode.not_found, detail="Notification preferences not found")
     return prefs
 
 
@@ -172,7 +173,7 @@ async def update_my_notification_preferences(
     )
     prefs = result.scalar_one_or_none()
     if prefs is None:
-        raise HTTPException(status_code=404, detail="Notification preferences not found")
+        raise AppError(status_code=404, error_code=ErrorCode.not_found, detail="Notification preferences not found")
 
     # exclude_unset: only fields the caller actually included in the
     # request body get applied — an omitted field means "leave this one
@@ -246,7 +247,7 @@ async def unregister_device_token(
         # for someone else" reasoning used elsewhere (e.g. a deactivated
         # provider profile returning 404 to a booking attempt), not 403,
         # which would confirm a token with this id exists at all.
-        raise HTTPException(status_code=404, detail="Device token not found")
+        raise AppError(status_code=404, error_code=ErrorCode.not_found, detail="Device token not found")
 
     await db.delete(device_token)
     await db.commit()
@@ -263,7 +264,7 @@ async def enroll_2fa(db: AsyncSession = Depends(get_db), current_user: User = De
     first QR code) — nothing is enabled either way until confirm
     succeeds, so there's no half-enabled state to worry about."""
     if current_user.totp_enabled:
-        raise HTTPException(status_code=400, detail="2FA is already enabled")
+        raise AppError(status_code=400, error_code=ErrorCode.invalid_state, detail="2FA is already enabled")
 
     secret = generate_secret()
     current_user.totp_secret_encrypted = encrypt_totp_secret(secret)
@@ -279,13 +280,13 @@ async def confirm_2fa(
     current_user: User = Depends(get_current_user),
 ):
     if current_user.totp_enabled:
-        raise HTTPException(status_code=400, detail="2FA is already enabled")
+        raise AppError(status_code=400, error_code=ErrorCode.invalid_state, detail="2FA is already enabled")
     if current_user.totp_secret_encrypted is None:
-        raise HTTPException(status_code=400, detail="Call POST /me/2fa/enroll first")
+        raise AppError(status_code=400, error_code=ErrorCode.invalid_state, detail="Call POST /me/2fa/enroll first")
 
     secret = decrypt_totp_secret(current_user.totp_secret_encrypted)
     if not verify_totp_code(secret, payload.code):
-        raise HTTPException(status_code=400, detail="Invalid code")
+        raise AppError(status_code=400, error_code=ErrorCode.invalid_code, detail="Invalid code")
 
     current_user.totp_enabled = True
     backup_codes = generate_backup_codes(db, current_user.id)
@@ -315,9 +316,9 @@ async def disable_2fa(
     access token — see TotpDisableRequest's docstring for why disabling
     2FA specifically needs that extra step-up check."""
     if not await verify_password(payload.password, current_user.hashed_password):
-        raise HTTPException(status_code=403, detail="Incorrect password")
+        raise AppError(status_code=403, error_code=ErrorCode.invalid_credentials, detail="Incorrect password")
     if not current_user.totp_enabled:
-        raise HTTPException(status_code=400, detail="2FA is not enabled")
+        raise AppError(status_code=400, error_code=ErrorCode.invalid_state, detail="2FA is not enabled")
 
     current_user.totp_enabled = False
     current_user.totp_secret_encrypted = None
@@ -336,9 +337,9 @@ async def regenerate_backup_codes(
     of backup codes is just as sensitive as 2FA itself (it's an
     alternate way past it), so it gets the same step-up check."""
     if not await verify_password(payload.password, current_user.hashed_password):
-        raise HTTPException(status_code=403, detail="Incorrect password")
+        raise AppError(status_code=403, error_code=ErrorCode.invalid_credentials, detail="Incorrect password")
     if not current_user.totp_enabled:
-        raise HTTPException(status_code=400, detail="2FA is not enabled")
+        raise AppError(status_code=400, error_code=ErrorCode.invalid_state, detail="2FA is not enabled")
 
     await invalidate_backup_codes(db, current_user.id)
     backup_codes = generate_backup_codes(db, current_user.id)
@@ -360,7 +361,7 @@ async def get_user(
     does an admin."""
     user = await db.get(User, user_id)
     if not user:
-        raise HTTPException(status_code=404, detail="User not found")
+        raise AppError(status_code=404, error_code=ErrorCode.not_found, detail="User not found")
     if user.id == current_user.id or current_user.role == UserRole.admin:
         return UserPublic.from_user(user, await get_capabilities(db, user))
     return UserSummary.model_validate(user)

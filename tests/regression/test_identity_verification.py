@@ -75,7 +75,7 @@ async def test_submit_verification_rejects_invalid_image(client):
         data={"document_type": "passport"},
         headers=headers,
     )
-    assert response.status_code == 400
+    assert response.status_code == 422
 
 
 async def test_get_my_verification_before_submitting_returns_404(client):

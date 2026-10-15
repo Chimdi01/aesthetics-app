@@ -22,12 +22,13 @@ import logging
 import uuid
 from datetime import UTC, datetime
 
-from fastapi import APIRouter, Depends, HTTPException
+from fastapi import APIRouter, Depends
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.booking_access import authorize_booking_party, get_owning_provider_profile
 from app.database import get_db
+from app.errors import AppError, ErrorCode, field_error
 from app.models.booking import Booking, BookingStatus
 from app.models.provider_profile import ProviderProfile
 from app.models.user import User
@@ -46,27 +47,49 @@ async def create_booking(
     db: AsyncSession = Depends(get_db),
     current_user: User = Depends(get_current_user),
 ):
+    # One object for both branches below, so a deactivated profile stays
+    # indistinguishable from a missing one, error_code included.
+    profile_not_found = AppError(
+        status_code=404, error_code=ErrorCode.not_found, detail="Provider profile not found"
+    )
     provider_profile = await db.get(ProviderProfile, payload.provider_profile_id)
     if not provider_profile:
-        raise HTTPException(status_code=404, detail="Provider profile not found")
+        raise profile_not_found
 
     if not provider_profile.is_active:
         # Deliberately 404, not 400/403: a deactivated provider should
         # look the same as one that doesn't exist to a customer trying to
         # book them — no need to reveal "this profile exists but is
         # moderated" to someone who isn't an admin.
-        raise HTTPException(status_code=404, detail="Provider profile not found")
+        raise profile_not_found
 
     if provider_profile.user_id == current_user.id:
-        raise HTTPException(status_code=400, detail="You can't book your own provider profile")
+        raise AppError(
+            status_code=400,
+            error_code=ErrorCode.cannot_target_self,
+            detail="You can't book your own provider profile",
+        )
 
     if payload.category not in provider_profile.categories:
-        raise HTTPException(
-            status_code=400, detail=f"This provider does not offer '{payload.category}'"
+        # category is already allowlist-validated (app/categories.py), so
+        # echoing it in detail/params can't reflect arbitrary input.
+        message = f"This provider does not offer '{payload.category}'"
+        raise AppError(
+            status_code=422,
+            error_code=ErrorCode.validation_failed,
+            detail=message,
+            params={"category": payload.category},
+            fields=[field_error("category", "not_offered", message)],
         )
 
     if payload.scheduled_at <= datetime.now(UTC):
-        raise HTTPException(status_code=400, detail="scheduled_at must be in the future")
+        message = "scheduled_at must be in the future"
+        raise AppError(
+            status_code=422,
+            error_code=ErrorCode.validation_failed,
+            detail=message,
+            fields=[field_error("scheduled_at", "must_be_future", message)],
+        )
 
     booking = Booking(
         customer_id=current_user.id,
@@ -120,7 +143,7 @@ async def get_booking(
 ):
     booking = await db.get(Booking, booking_id)
     if not booking:
-        raise HTTPException(status_code=404, detail="Booking not found")
+        raise AppError(status_code=404, error_code=ErrorCode.not_found, detail="Booking not found")
 
     await authorize_booking_party(db, booking, current_user)
 
@@ -136,30 +159,47 @@ async def update_booking_status(
 ):
     booking = await db.get(Booking, booking_id)
     if not booking:
-        raise HTTPException(status_code=404, detail="Booking not found")
+        raise AppError(status_code=404, error_code=ErrorCode.not_found, detail="Booking not found")
 
     is_customer, is_provider = await authorize_booking_party(db, booking, current_user)
 
     if booking.status in (BookingStatus.completed, BookingStatus.cancelled):
-        raise HTTPException(
-            status_code=400, detail=f"Booking is already {booking.status.value}, no further changes allowed"
+        raise AppError(
+            status_code=400,
+            error_code=ErrorCode.invalid_state,
+            detail=f"Booking is already {booking.status.value}, no further changes allowed",
+            params={"status": booking.status.value},
         )
 
     new_status = payload.status
     if new_status == BookingStatus.confirmed:
         if not is_provider:
-            raise HTTPException(status_code=403, detail="Only the provider can confirm a booking")
+            raise AppError(
+                status_code=403, error_code=ErrorCode.forbidden, detail="Only the provider can confirm a booking"
+            )
         if booking.status != BookingStatus.requested:
-            raise HTTPException(status_code=400, detail="Only a requested booking can be confirmed")
+            raise AppError(
+                status_code=400,
+                error_code=ErrorCode.invalid_state,
+                detail="Only a requested booking can be confirmed",
+            )
     elif new_status == BookingStatus.completed:
         if not is_provider:
-            raise HTTPException(status_code=403, detail="Only the provider can mark a booking completed")
+            raise AppError(
+                status_code=403,
+                error_code=ErrorCode.forbidden,
+                detail="Only the provider can mark a booking completed",
+            )
         if booking.status != BookingStatus.confirmed:
-            raise HTTPException(status_code=400, detail="Only a confirmed booking can be completed")
+            raise AppError(
+                status_code=400,
+                error_code=ErrorCode.invalid_state,
+                detail="Only a confirmed booking can be completed",
+            )
     elif new_status == BookingStatus.cancelled:
         pass  # either the customer or the provider can cancel a requested/confirmed booking
     else:
-        raise HTTPException(status_code=400, detail="Invalid status transition")
+        raise AppError(status_code=400, error_code=ErrorCode.invalid_state, detail="Invalid status transition")
 
     previous_status = booking.status
     booking.status = new_status

@@ -8,11 +8,12 @@ rather than one file branching on role.
 """
 import logging
 
-from fastapi import APIRouter, Depends, File, Form, HTTPException, Response, UploadFile
+from fastapi import APIRouter, Depends, File, Form, Response, UploadFile
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.database import get_db
+from app.errors import AppError, ErrorCode
 from app.models.identity_verification import (
     DocumentType,
     IdentityVerification,
@@ -47,7 +48,7 @@ async def submit_verification(
 ):
     existing = await _get_own_verification(db, current_user)
     if existing and existing.status == VerificationStatus.approved:
-        raise HTTPException(status_code=409, detail="You're already verified")
+        raise AppError(status_code=409, error_code=ErrorCode.duplicate_resource, detail="You're already verified")
 
     relative_path = await save_verification_document(file, current_user.id)
 
@@ -81,7 +82,7 @@ async def submit_verification(
 async def get_my_verification(db: AsyncSession = Depends(get_db), current_user: User = Depends(get_current_user)):
     verification = await _get_own_verification(db, current_user)
     if not verification:
-        raise HTTPException(status_code=404, detail="No verification submitted yet")
+        raise AppError(status_code=404, error_code=ErrorCode.not_found, detail="No verification submitted yet")
     return verification
 
 
@@ -91,7 +92,7 @@ async def get_my_verification_document(
 ):
     verification = await _get_own_verification(db, current_user)
     if not verification:
-        raise HTTPException(status_code=404, detail="No verification submitted yet")
+        raise AppError(status_code=404, error_code=ErrorCode.not_found, detail="No verification submitted yet")
 
     content = await read_verification_document(verification.file_path)
     # The opposite of /media's Cache-Control: this is a government ID

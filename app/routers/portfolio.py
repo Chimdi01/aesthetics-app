@@ -15,7 +15,6 @@ from fastapi import (
     Depends,
     File,
     Form,
-    HTTPException,
     Query,
     Request,
     UploadFile,
@@ -24,6 +23,7 @@ from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.database import get_db
+from app.errors import AppError, ErrorCode
 from app.models.portfolio_media import PortfolioMedia
 from app.models.provider_profile import ProviderProfile
 from app.rate_limit import limiter
@@ -85,7 +85,7 @@ async def delete_portfolio_media(
 ):
     media = await db.get(PortfolioMedia, media_id)
     if not media or media.provider_profile_id != profile.id:
-        raise HTTPException(status_code=404, detail="Portfolio media not found")
+        raise AppError(status_code=404, error_code=ErrorCode.not_found, detail="Portfolio media not found")
 
     await db.delete(media)
     await db.commit()
@@ -102,7 +102,7 @@ async def list_provider_portfolio(
 ):
     profile = await db.get(ProviderProfile, profile_id)
     if not profile:
-        raise HTTPException(status_code=404, detail="Provider profile not found")
+        raise AppError(status_code=404, error_code=ErrorCode.not_found, detail="Provider profile not found")
 
     result = await db.execute(
         select(PortfolioMedia)

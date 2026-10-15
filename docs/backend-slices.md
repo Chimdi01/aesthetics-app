@@ -10,18 +10,18 @@ Backend work, one slice at a time. Rules: stop after each numbered step for revi
 
 ## Decisions that change the code (defaults apply if you don't choose)
 
-| Decision | Default |
-| --- | --- |
-| Live-location transport | Server-sent events for viewers, plain POST for the publisher. One instance first, behind an interface so Redis pub/sub can be added |
-| Slot hold length | 10 minutes |
+| Decision | Default                                                                                                                                                                                            |
+| --- |----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------|
+| Live-location transport | Server-sent events for viewers, plain POST for the publisher. One instance first, behind an interface so Redis pub/sub can be added                                                                |
+| Slot hold length | 10 minutes                                                                                                                                                                                         |
 | Fees | 20% on a first booking from a new client (minimum £4 equivalent per currency), 3% on repeat in-app bookings, first three new-client fees waived per new provider; all configurable, none hard-coded |
-| Rebook cadence defaults | Barber 28 days, nails 21, colour 56, braids 42; provider-editable |
-| Raw location points kept | 24 hours (confirm with counsel) |
-| Typical-price minimum sample | 10 distinct providers |
-| Profile listing threshold | Profile strength 60% |
-| Emergency numbers per market | Config values, marked unverified until checked |
-| Number masking provider | Undecided: interface plus a fake, feature-flagged off |
-| Pro plan | Record plan and entitlements now; no billing yet |
+| Rebook cadence defaults | Barber 28 days, nails 21, colour 56, braids 42; provider-editable                                                                                                                                  |
+| Raw location points kept | 24 hours (confirm with counsel)                                                                                                                                                                    |
+| Typical-price minimum sample | 10 distinct providers                                                                                                                                                                              |
+| Profile listing threshold | Profile strength 60%                                                                                                                                                                               |
+| Emergency numbers per market | Config values, marked unverified until checked                                                                                                                                                     |
+| Number masking provider | Undecided: interface plus a fake, feature-flagged off                                                                                                                                              |
+| Pro plan | Record plan and entitlements now; billing lands in Slice 8, through store in-app purchase plus Stripe on the web                                                                                                                                                   |
 
 ## What stays dormant, and why
 
@@ -38,7 +38,7 @@ Slice 1: 6 to 8 hours. Slice 2: 8 to 10. Slice 3: 8 to 10. Slice 4: 6 to 8. Slic
 ```
 Slice 1. Stop after each step.
 
-1) Error codes. Every error response, including framework-generated ones (422 validation, unknown routes, 405, built-in 401s, 429 rate limits), uses one envelope: `error_code` (stable enum), `detail` (a human-readable English string, unchanged, used for logs and dev builds), optional `params` (safe values for placeholders such as a status), optional `fields` (for validation errors: field, code, message), and `request_id`. Add request-ID middleware that echoes X-Request-ID, and put request_id, user id and error_code on every structured log line. Define the codes in one enum module and migrate existing HTTPExceptions. Include at least: unauthenticated, invalid_credentials, invalid_code, token_invalid_or_expired, account_deactivated, account_locked, forbidden, cannot_target_self, not_found, duplicate_resource, validation_failed, invalid_state, payload_too_large, rate_limited, not_implemented, provider_profile_required, slot_unavailable, outside_service_area, idempotency_conflict. Show me the envelope before changing call sites.
+1) Error codes. Every error response, including framework-generated ones (422 validation, unknown routes, 405, built-in 401s, 429 rate limits), uses one envelope: `error_code` (stable enum), `detail` (a human-readable English string, unchanged, used for logs and dev builds), optional `params` (safe values for placeholders such as a status), optional `fields` (for validation errors: field, code, message), and `request_id`. Add request-ID middleware that echoes X-Request-ID, and put request_id, user id and error_code on every structured log line. Define the codes in one enum module and migrate existing HTTPExceptions. Include at least: unauthenticated, invalid_credentials, invalid_code, token_invalid_or_expired, account_deactivated, forbidden, cannot_target_self, not_found, duplicate_resource, validation_failed, invalid_state, payload_too_large, rate_limited, not_implemented, provider_profile_required, slot_unavailable, outside_service_area, idempotency_conflict. Show me the envelope before changing call sites.
 
 2) Idempotency. Add an Idempotency-Key dependency for money-relevant writes, starting with POST /v1/bookings/. Same key and payload returns the original response; same key with a different payload returns idempotency_conflict. Add a nullable idempotency_key column to Payment (no logic yet). Note a cleanup plan for old keys.
 
@@ -169,4 +169,71 @@ Slice 7. Stop after each step. Test and sandbox keys only.
 3) Payment model: link to booking, fee snapshot, applied credit, idempotency_key, provider-agnostic status machine. Customer pays booking total minus credit; provider payout is unaffected by credit.
 
 4) Activation checklist document: what each live key, account and copy deliverable switches on (live payments, telephony, French notification copy, CDN base URL), with the exact config for each.
+```
+
+## Slice 8: Subscriptions and entitlements
+
+```
+Slice 8: subscriptions. Requires Slice 5 (plans and entitlements). Stop after each step.
+
+Context: store rules decide how we may charge. Anything that unlocks features inside the app (Pro for providers, any customer membership) must be sold through Apple in-app purchase and Google Play billing in most storefronts; bookings and physical products are real-world goods and stay on Stripe and Flutterwave. Verify the current rules and tell me anything that contradicts this before building.
+
+1) Report what Slice 5 built for ProviderPlan and entitlements, and propose the smallest change to support: monthly and yearly terms; a customer membership tier as well as the provider Pro tier; and several purchase channels for the same entitlement.
+
+2) Subscription model: subject (user or provider profile), tier, term (monthly or yearly), status (trialing, active, grace, on_hold, cancelled, expired), current_period_end, cancel_at_period_end, channel (apple, google, stripe, manual), external ids, price_minor and currency as sold, and trial_ends_at. Entitlements are derived from status, never set by hand, and one entitlements function serves every channel. A manual channel lets me grant Pro for support or a referral reward, with an audit trail.
+
+3) Verification: POST /v1/subscriptions/verify takes a store receipt or purchase token, verifies it server-side with Apple or Google, and links it to the signed-in user. Store-to-server notifications (Apple App Store Server Notifications, Google Play Real-time Developer Notifications) update status: renewal, cancellation, billing retry, grace period, refund, upgrade, downgrade. Handle them idempotently by notification id and treat them as the source of truth; a client claim alone never grants an entitlement. Report whether to integrate the stores directly or through a subscription service such as RevenueCat, with the trade-offs.
+
+4) Stripe subscriptions for the web channel, with the same entitlement outcome, so a provider who subscribes on the web is Pro in the app too.
+
+5) Yearly pricing: ten months' price for twelve by default, per currency, in config. Add a note that naira pricing must be reviewed at least yearly because of currency movement. Never hard-code prices.
+
+6) Grace and dunning: on a failed renewal keep entitlements through the store's grace period, notify the subscriber, and downgrade cleanly afterwards. Downgrading never deletes data; it only hides features (a Pro provider's past analytics stay, they just cannot see new reports).
+
+7) Refunds and chargebacks revoke entitlements immediately. Reconciliation job: daily, compare our status with the stores and report drift.
+
+8) Tests: a fake store verifier; every notification type; replayed notifications; a receipt belonging to another user is rejected; grace then expiry; refund revokes; manual grants expire; entitlements identical across channels.
+
+```
+
+## Slice 9: Product marketplace (v1)
+
+```
+Slice 9: product marketplace. Requires Slice 5 (fees, credits) and ideally Slice 7 (payments). Stop after each step.
+
+v1 boundaries, which I may lift later: physical goods only (digital goods would fall under store in-app purchase rules); seller and buyer in the same market, so no cross-border customs or import VAT yet; one seller per order, because Stripe direct charges settle to a single connected account, so a basket spanning sellers splits into one order per seller.
+
+1) Seller capability. Sellers are providers selling their own products, or brands that do not offer services. Report how to add "seller" to the existing capabilities model without disturbing customer and provider. Brands need a business profile (legal name, registration number, contact, returns address, returns policy text) and the same payout onboarding as providers.
+
+2) Catalogue: Product (seller_id, title, description, category, brand, condition new, status draft/pending_review/active/suspended, hazard and ingredient notes) and ProductVariant (sku, option names such as shade or size, price_minor, currency, stock_quantity, weight_grams, barcode). Images reuse the portfolio pipeline with sized variants. Stock decrements on payment, with a reservation while checkout is in flight, and a concurrency test proving oversell is impossible.
+
+3) Compliance fields, required before a listing goes active (report what each market needs and make it configurable): a cosmetics notification reference or responsible-person details for the UK, a NAFDAC registration number for Nigeria, an ingredient list, and shelf-life or batch where relevant. A prohibited-categories policy enforced in code, with a configurable list: prescription medicines, injectables, unapproved skin-lightening agents (research which are restricted per market and cite sources; do not guess), hazardous aerosols where shipping rules forbid them, counterfeits. Every listing is manually approved before going live, with an admin queue and an audit trail.
+
+4) Orders: Order (buyer, seller, status pending_payment/paid/preparing/shipped/delivered/cancelled/refunded/disputed), OrderItem snapshots (title, variant, unit price, quantity), shipping address snapshot, shipping method and fee, totals, and the platform commission snapshot. Commission is a percentage in config, defaulting to 12%, per category, computed server-side exactly like booking fees. Sellers handle their own shipping: they mark shipped with a carrier and tracking number. Buyers confirm delivery, or it auto-confirms after a configurable window.
+
+5) Payments: reuse the Slice 7 interfaces. Stripe direct charges settle to the seller with our application fee; disputes fall on the seller. On Flutterwave we are merchant of record, so hold the payout until delivery is confirmed or the window passes, and record chargebacks against the seller, subject to counsel confirming we may hold funds. Credit from the ledger can be spent on products, capped at our commission, exactly as for bookings.
+
+6) Returns and refunds: a returns request flow with reasons, a configurable window per market, and an explicit hygiene-seal exemption (opened cosmetics usually cannot be returned; confirm the rule per market and surface the policy before purchase). Partial refunds, restocking, and commission reversal on refund.
+
+7) Product reviews, only from a delivered order; one per item; photos with consent; reuse the existing moderation and reporting.
+
+8) Discovery: GET /v1/products with category, price range, brand, seller, in-stock and sort; products on a provider's page; recommendation hooks ("used in this look") linking a portfolio post to products, so a provider earns a share of our commission, configurable, default a third, paid through the credit ledger.
+
+9) Tests: oversell under concurrency; a listing without compliance fields cannot go active; prohibited categories rejected; commission and credit arithmetic; refund reverses commission; returns window and hygiene exemption; one order per seller when a basket spans sellers; cross-border purchase rejected in v1.
+
+```
+
+## Slice 10: Widget and Live Activity support
+
+```
+Slice 10: widget and lock-screen support. Requires the rebook and cadence work. Stop after each step.
+
+1) GET /v1/me/summary, a single small cached payload for widgets: next booking (provider first name, service, start time, visit type), whether rebooking is due with the provider and service to repeat, unread message count, and for providers today's booking count and next client first name. Cache per user, invalidate on booking changes, and keep it under a few kilobytes. No addresses, no surnames, no prices.
+
+2) Push: a silent push on booking changes so widgets refresh promptly instead of polling. Respect quiet hours for visible pushes; silent refreshes are exempt.
+
+3) Live Activity and ongoing notification support for trips: a token registry per trip, plus a server push on each ETA change (rate-limited, say at most one a minute) carrying only first name, ETA and state. Ends when the trip ends. Reuse the Slice 6 trip states.
+
+4) Tests: the summary never leaks an address, surname or price; cache invalidation on booking create, cancel, reschedule and complete; Live Activity pushes stop when a trip ends.
+
 ```

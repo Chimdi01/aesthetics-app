@@ -114,7 +114,7 @@ async def test_upload_portfolio_media_rejects_content_claiming_to_be_an_image_bu
         files=_jpeg_file(content=b"this is not actually a jpeg"),
         headers=provider_headers,
     )
-    assert response.status_code == 400
+    assert response.status_code == 422
 
 
 async def test_uploaded_photo_is_served_with_long_lived_cache_control(client):
@@ -140,7 +140,7 @@ async def test_upload_portfolio_media_rejects_disallowed_content_type(client):
         files={"file": ("doc.pdf", io.BytesIO(b"not an image"), "application/pdf")},
         headers=provider_headers,
     )
-    assert response.status_code == 400
+    assert response.status_code == 422
 
 
 async def test_upload_portfolio_media_rejects_oversized_file(client, monkeypatch):

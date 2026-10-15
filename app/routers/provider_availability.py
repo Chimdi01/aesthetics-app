@@ -12,11 +12,12 @@ profile CRUD, search, availability, AND portfolio all in one place.
 import logging
 import uuid
 
-from fastapi import APIRouter, Depends, HTTPException
+from fastapi import APIRouter, Depends
 from sqlalchemy import delete, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.database import get_db
+from app.errors import AppError, ErrorCode
 from app.models.provider_availability import DayOfWeek, ProviderAvailability
 from app.models.provider_profile import ProviderProfile
 from app.schemas.provider_availability import (
@@ -67,7 +68,7 @@ async def set_provider_availability(
 async def get_provider_availability(profile_id: uuid.UUID, db: AsyncSession = Depends(get_db)):
     profile = await db.get(ProviderProfile, profile_id)
     if not profile:
-        raise HTTPException(status_code=404, detail="Provider profile not found")
+        raise AppError(status_code=404, error_code=ErrorCode.not_found, detail="Provider profile not found")
 
     # Naturally bounded (at most a handful of shifts per day, 7 days) — no
     # pagination needed the way the reviews/portfolio listings have it.

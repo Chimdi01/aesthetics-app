@@ -18,13 +18,14 @@ search.
 import logging
 import uuid
 
-from fastapi import APIRouter, Depends, HTTPException, Query
+from fastapi import APIRouter, Depends, Query
 from geoalchemy2 import Geography, WKTElement
 from sqlalchemy import cast, func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.categories import Category
 from app.database import get_db
+from app.errors import AppError, ErrorCode
 from app.models.payout_account import ProviderPayoutAccount
 from app.models.provider_profile import ProviderProfile
 from app.models.review import Review
@@ -55,13 +56,21 @@ async def create_provider_profile(
     (see CLAUDE.md): an admin account can never hold a ProviderProfile,
     so this is refused regardless of whether one already exists yet."""
     if current_user.role == UserRole.admin:
-        raise HTTPException(status_code=403, detail="Admin accounts cannot hold a provider profile")
+        raise AppError(
+            status_code=403,
+            error_code=ErrorCode.forbidden,
+            detail="Admin accounts cannot hold a provider profile",
+        )
 
     existing = await db.execute(
         select(ProviderProfile).where(ProviderProfile.user_id == current_user.id)
     )
     if existing.scalar_one_or_none():
-        raise HTTPException(status_code=409, detail="Provider profile already exists for this user")
+        raise AppError(
+            status_code=409,
+            error_code=ErrorCode.duplicate_resource,
+            detail="Provider profile already exists for this user",
+        )
 
     profile = ProviderProfile(
         user_id=current_user.id,
@@ -129,7 +138,11 @@ async def get_my_payout_account(
         # Shouldn't happen — create_provider_profile always stages one —
         # but a profile created before this existed, or direct DB
         # tampering, could leave this gap.
-        raise HTTPException(status_code=404, detail="No payout account found for this provider")
+        raise AppError(
+            status_code=404,
+            error_code=ErrorCode.not_found,
+            detail="No payout account found for this provider",
+        )
     return payout_account
 
 
@@ -206,5 +219,5 @@ async def search_providers(
 async def get_provider_profile(profile_id: uuid.UUID, db: AsyncSession = Depends(get_db)):
     profile = await db.get(ProviderProfile, profile_id)
     if not profile:
-        raise HTTPException(status_code=404, detail="Provider profile not found")
+        raise AppError(status_code=404, error_code=ErrorCode.not_found, detail="Provider profile not found")
     return profile

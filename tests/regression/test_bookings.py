@@ -65,7 +65,7 @@ async def test_create_booking_without_token_returns_401(client):
     assert response.status_code == 401
 
 
-async def test_create_booking_for_unoffered_category_returns_400(client):
+async def test_create_booking_for_unoffered_category_returns_422(client):
     # Provider only does hair — booking them for nails must fail, not
     # silently succeed with a category they don't actually offer.
     profile, _ = await _create_provider_with_profile(client, categories=["hair"])
@@ -81,7 +81,7 @@ async def test_create_booking_for_unoffered_category_returns_400(client):
         },
         headers=customer_headers,
     )
-    assert response.status_code == 400
+    assert response.status_code == 422
 
 
 async def test_create_booking_for_unknown_provider_returns_404(client):
@@ -114,7 +114,7 @@ async def test_provider_cannot_book_their_own_profile(client):
     assert response.status_code == 400
 
 
-async def test_create_booking_in_the_past_returns_400(client):
+async def test_create_booking_in_the_past_returns_422(client):
     profile, _ = await _create_provider_with_profile(client)
     customer_headers = await _create_customer_headers(client)
     response = await client.post(
@@ -127,7 +127,7 @@ async def test_create_booking_in_the_past_returns_400(client):
         },
         headers=customer_headers,
     )
-    assert response.status_code == 400
+    assert response.status_code == 422
 
 
 async def test_create_booking_with_naive_scheduled_at_returns_422(client):

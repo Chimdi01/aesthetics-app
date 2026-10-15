@@ -8,10 +8,10 @@ a sibling router file.
 """
 import logging
 
-from fastapi import HTTPException
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.errors import AppError, ErrorCode
 from app.models.booking import Booking
 from app.models.provider_profile import ProviderProfile
 from app.models.user import User
@@ -33,5 +33,8 @@ async def authorize_booking_party(db: AsyncSession, booking: Booking, current_us
     is_provider = provider_profile.user_id == current_user.id
     if not is_customer and not is_provider:
         logger.warning("User %s denied access to booking %s (not a party to it)", current_user.id, booking.id)
-        raise HTTPException(status_code=403, detail="Not your booking")
+        # 403 rather than a disguising 404 is a deliberate choice that
+        # rests on booking ids being random UUIDs: confirming one exists
+        # reveals nothing guessable. Revisit if ids ever become sequential.
+        raise AppError(status_code=403, error_code=ErrorCode.forbidden, detail="Not your booking")
     return is_customer, is_provider

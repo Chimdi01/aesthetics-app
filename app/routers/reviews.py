@@ -15,11 +15,12 @@ booking lifecycle, reviews, AND messaging all in one place.
 import logging
 import uuid
 
-from fastapi import APIRouter, Depends, HTTPException, Query
+from fastapi import APIRouter, Depends, Query
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.database import get_db
+from app.errors import AppError, ErrorCode
 from app.models.booking import Booking, BookingStatus
 from app.models.provider_profile import ProviderProfile
 from app.models.review import Review
@@ -42,18 +43,30 @@ async def create_review(
 ):
     booking = await db.get(Booking, booking_id)
     if not booking:
-        raise HTTPException(status_code=404, detail="Booking not found")
+        raise AppError(status_code=404, error_code=ErrorCode.not_found, detail="Booking not found")
 
     if booking.customer_id != current_user.id:
         logger.warning("User %s denied review access to booking %s (not the customer)", current_user.id, booking.id)
-        raise HTTPException(status_code=403, detail="Only the customer on this booking can leave a review")
+        raise AppError(
+            status_code=403,
+            error_code=ErrorCode.forbidden,
+            detail="Only the customer on this booking can leave a review",
+        )
 
     if booking.status != BookingStatus.completed:
-        raise HTTPException(status_code=400, detail="Only a completed booking can be reviewed")
+        raise AppError(
+            status_code=400,
+            error_code=ErrorCode.invalid_state,
+            detail="Only a completed booking can be reviewed",
+        )
 
     existing = await db.execute(select(Review).where(Review.booking_id == booking_id))
     if existing.scalar_one_or_none():
-        raise HTTPException(status_code=409, detail="This booking has already been reviewed")
+        raise AppError(
+            status_code=409,
+            error_code=ErrorCode.duplicate_resource,
+            detail="This booking has already been reviewed",
+        )
 
     review = Review(
         booking_id=booking.id,
@@ -91,7 +104,7 @@ async def list_provider_reviews(
 ):
     profile = await db.get(ProviderProfile, profile_id)
     if not profile:
-        raise HTTPException(status_code=404, detail="Provider profile not found")
+        raise AppError(status_code=404, error_code=ErrorCode.not_found, detail="Provider profile not found")
 
     result = await db.execute(
         select(Review)

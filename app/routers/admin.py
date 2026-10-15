@@ -11,13 +11,14 @@ import logging
 import uuid
 from datetime import UTC, datetime
 
-from fastapi import APIRouter, Depends, HTTPException, Query, Response
+from fastapi import APIRouter, Depends, Query, Response
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.audit_log import record_audit_log
 from app.capabilities import get_capabilities
 from app.database import get_db
+from app.errors import AppError, ErrorCode
 from app.models.audit_log import AuditAction, AuditLog, AuditTargetType
 from app.models.identity_verification import IdentityVerification, VerificationStatus
 from app.models.provider_profile import ProviderProfile
@@ -65,7 +66,7 @@ async def get_verification_document(
 ):
     verification = await db.get(IdentityVerification, verification_id)
     if not verification:
-        raise HTTPException(status_code=404, detail="Verification not found")
+        raise AppError(status_code=404, error_code=ErrorCode.not_found, detail="Verification not found")
 
     content = await read_verification_document(verification.file_path)
     return Response(
@@ -84,13 +85,22 @@ async def review_verification(
 ):
     verification = await db.get(IdentityVerification, verification_id)
     if not verification:
-        raise HTTPException(status_code=404, detail="Verification not found")
+        raise AppError(status_code=404, error_code=ErrorCode.not_found, detail="Verification not found")
 
     if verification.user_id == current_admin.id:
-        raise HTTPException(status_code=400, detail="You can't review your own verification submission")
+        raise AppError(
+            status_code=400,
+            error_code=ErrorCode.cannot_target_self,
+            detail="You can't review your own verification submission",
+        )
 
     if verification.status != VerificationStatus.pending:
-        raise HTTPException(status_code=400, detail=f"Verification is already {verification.status.value}")
+        raise AppError(
+            status_code=400,
+            error_code=ErrorCode.invalid_state,
+            detail=f"Verification is already {verification.status.value}",
+            params={"status": verification.status.value},
+        )
 
     verification.status = payload.status
     verification.rejection_reason = payload.rejection_reason if payload.status == VerificationStatus.rejected else None
@@ -150,13 +160,22 @@ async def review_report(
 ):
     report = await db.get(Report, report_id)
     if not report:
-        raise HTTPException(status_code=404, detail="Report not found")
+        raise AppError(status_code=404, error_code=ErrorCode.not_found, detail="Report not found")
 
     if report.reported_user_id == current_admin.id:
-        raise HTTPException(status_code=400, detail="You can't review a report filed against yourself")
+        raise AppError(
+            status_code=400,
+            error_code=ErrorCode.cannot_target_self,
+            detail="You can't review a report filed against yourself",
+        )
 
     if report.status != ReportStatus.pending:
-        raise HTTPException(status_code=400, detail=f"Report is already {report.status.value}")
+        raise AppError(
+            status_code=400,
+            error_code=ErrorCode.invalid_state,
+            detail=f"Report is already {report.status.value}",
+            params={"status": report.status.value},
+        )
 
     report.status = payload.status
     report.resolved_by = current_admin.id
@@ -206,11 +225,15 @@ async def set_user_active_status(
     business profile again are different decisions, and the safer
     default is requiring the profile to be explicitly re-enabled."""
     if user_id == current_admin.id:
-        raise HTTPException(status_code=400, detail="You can't deactivate your own account")
+        raise AppError(
+            status_code=400,
+            error_code=ErrorCode.cannot_target_self,
+            detail="You can't deactivate your own account",
+        )
 
     user = await db.get(User, user_id)
     if not user:
-        raise HTTPException(status_code=404, detail="User not found")
+        raise AppError(status_code=404, error_code=ErrorCode.not_found, detail="User not found")
 
     user.is_active = payload.is_active
     cascaded_provider_profile = False
@@ -251,7 +274,7 @@ async def set_provider_active_status(
     and resolving a report doesn't require (or imply) deactivating."""
     profile = await db.get(ProviderProfile, profile_id)
     if not profile:
-        raise HTTPException(status_code=404, detail="Provider profile not found")
+        raise AppError(status_code=404, error_code=ErrorCode.not_found, detail="Provider profile not found")
 
     profile.is_active = payload.is_active
     record_audit_log(
@@ -292,7 +315,11 @@ async def revoke_all_sessions(
     account, so it gets its own explicit confirmation requirement on
     top of the normal admin-only auth check."""
     if not payload.confirm:
-        raise HTTPException(status_code=400, detail="Set confirm=true to revoke every session platform-wide")
+        raise AppError(
+            status_code=400,
+            error_code=ErrorCode.invalid_state,
+            detail="Set confirm=true to revoke every session platform-wide",
+        )
 
     revoked_count = await revoke_all_refresh_tokens_platform_wide(db)
     record_audit_log(

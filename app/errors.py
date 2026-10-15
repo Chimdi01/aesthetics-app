@@ -61,10 +61,12 @@ class AppError(HTTPException):
         error_code: ErrorCode,
         detail: str,
         params: dict[str, object] | None = None,
+        fields: list[dict[str, str]] | None = None,
         headers: dict | None = None,
     ):
         self.error_code = error_code
         self.params = params
+        self.fields = fields
         super().__init__(status_code=status_code, detail=detail, headers=headers)
 
 
@@ -89,13 +91,12 @@ def fallback_error_code(status_code: int) -> ErrorCode:
     return _FALLBACK_CODE_BY_STATUS.get(status_code, ErrorCode.invalid_state)
 
 
-# Maps Pydantic v2's own internal error `type` strings to the field
-# codes we actually expose to clients — frozen deliberately, pinned by
-# tests/unit/test_errors.py, specifically so a future Pydantic upgrade
-# that renames one of these internally degrades to the generic
-# fallback below rather than silently leaking a new, unreviewed
-# string. Covers every validator pattern currently used in this
-# codebase (see that test for the full list).
+# Every field code a client can ever see, frozen deliberately and pinned
+# by tests/unit/test_errors.py. Keys are Pydantic v2's own internal error
+# `type` strings, so a Pydantic upgrade renaming one degrades to the
+# generic fallback below rather than leaking a new, unreviewed string;
+# plus our own codes for business-rule checks raised via field_error(),
+# which go through the same lookup and so the same freeze.
 _FIELD_CODE_BY_PYDANTIC_TYPE: dict[str, str] = {
     "missing": "missing",
     "string_too_short": "too_short",
@@ -119,12 +120,22 @@ _FIELD_CODE_BY_PYDANTIC_TYPE: dict[str, str] = {
     "list_type": "invalid_type",
     "too_short": "too_short",
     "too_long": "too_long",
+    # App-raised (field_error()), not Pydantic types.
+    "must_be_future": "must_be_future",
+    "not_offered": "not_offered",
 }
 _GENERIC_FIELD_CODE = "invalid"
 
 
 def field_error_code(pydantic_type: str) -> str:
     return _FIELD_CODE_BY_PYDANTIC_TYPE.get(pydantic_type, _GENERIC_FIELD_CODE)
+
+
+def field_error(field: str, code: str, message: str) -> dict[str, str]:
+    """One `fields` entry for a business-rule check raised as AppError.
+    `code` must be registered in the mapping above, or it degrades to
+    the generic code exactly as an unmapped Pydantic type would."""
+    return {"field": field, "code": field_error_code(code), "message": message}
 
 
 def build_field_errors(errors: Sequence[dict]) -> list[dict[str, str]]:

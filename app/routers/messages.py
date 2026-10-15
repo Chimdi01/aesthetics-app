@@ -10,12 +10,13 @@ docstring), rather than importing from one router module into another.
 import logging
 import uuid
 
-from fastapi import APIRouter, Depends, HTTPException, Query
+from fastapi import APIRouter, Depends, Query
 from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.booking_access import authorize_booking_party, get_owning_provider_profile
 from app.database import get_db
+from app.errors import AppError, ErrorCode
 from app.models.booking import Booking
 from app.models.message import Message
 from app.models.user import User
@@ -37,7 +38,7 @@ async def send_message(
 ):
     booking = await db.get(Booking, booking_id)
     if not booking:
-        raise HTTPException(status_code=404, detail="Booking not found")
+        raise AppError(status_code=404, error_code=ErrorCode.not_found, detail="Booking not found")
 
     is_customer, _ = await authorize_booking_party(db, booking, current_user)
 
@@ -89,7 +90,7 @@ async def list_messages(
 ):
     booking = await db.get(Booking, booking_id)
     if not booking:
-        raise HTTPException(status_code=404, detail="Booking not found")
+        raise AppError(status_code=404, error_code=ErrorCode.not_found, detail="Booking not found")
 
     await authorize_booking_party(db, booking, current_user)
 

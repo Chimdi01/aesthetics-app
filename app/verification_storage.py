@@ -35,11 +35,12 @@ import logging
 import uuid
 from pathlib import Path
 
-from fastapi import HTTPException, UploadFile
+from fastapi import UploadFile
 from PIL import Image, UnidentifiedImageError
 from starlette.concurrency import run_in_threadpool
 
 from app.config import settings
+from app.errors import AppError, ErrorCode
 
 ALLOWED_CONTENT_TYPES: dict[str, str] = {
     "image/jpeg": ".jpg",
@@ -53,9 +54,14 @@ async def save_verification_document(file: UploadFile, user_id: uuid.UUID) -> st
     """Validates, reads, and writes `file` to local disk unmodified
     (beyond format validation). Returns the relative path."""
     if file.content_type not in ALLOWED_CONTENT_TYPES:
-        raise HTTPException(
-            status_code=400,
-            detail=f"Unsupported file type '{file.content_type}'. Allowed: {sorted(ALLOWED_CONTENT_TYPES)}",
+        # The client-supplied content type is deliberately NOT echoed back
+        # in detail (no response field may reflect raw user input).
+        allowed = sorted(ALLOWED_CONTENT_TYPES)
+        raise AppError(
+            status_code=422,
+            error_code=ErrorCode.validation_failed,
+            detail=f"Unsupported file type. Allowed: {allowed}",
+            params={"allowed_types": allowed},
         )
     extension = ALLOWED_CONTENT_TYPES[file.content_type]
 
@@ -64,11 +70,15 @@ async def save_verification_document(file: UploadFile, user_id: uuid.UUID) -> st
     while chunk := await file.read(_CHUNK_SIZE):
         bytes_read += len(chunk)
         if bytes_read > settings.max_upload_size_bytes:
-            raise HTTPException(status_code=413, detail="File exceeds maximum upload size")
+            raise AppError(
+                status_code=413,
+                error_code=ErrorCode.payload_too_large,
+                detail="File exceeds maximum upload size",
+            )
         chunks.append(chunk)
 
     if bytes_read == 0:
-        raise HTTPException(status_code=400, detail="Uploaded file is empty")
+        raise AppError(status_code=422, error_code=ErrorCode.validation_failed, detail="Uploaded file is empty")
 
     raw = b"".join(chunks)
 
@@ -82,7 +92,11 @@ async def save_verification_document(file: UploadFile, user_id: uuid.UUID) -> st
                 image.verify()
         except UnidentifiedImageError:
             # from None: same reasoning as app/storage.py's identical check.
-            raise HTTPException(status_code=400, detail="Uploaded file is not a valid image") from None
+            raise AppError(
+                status_code=422,
+                error_code=ErrorCode.validation_failed,
+                detail="Uploaded file is not a valid image",
+            ) from None
 
     # run_in_threadpool: Image.verify() is synchronous, CPU-bound Pillow
     # work — see the module docstring's Performance note.
@@ -103,9 +117,9 @@ async def read_verification_document(relative_path: str) -> bytes:
     target = (verification_root / relative_path).resolve()
     if verification_root not in target.parents:
         logging.getLogger(__name__).error("Refused to read path outside verification_root: %s", relative_path)
-        raise HTTPException(status_code=404, detail="Document not found")
+        raise AppError(status_code=404, error_code=ErrorCode.not_found, detail="Document not found")
     if not target.is_file():
-        raise HTTPException(status_code=404, detail="Document not found")
+        raise AppError(status_code=404, error_code=ErrorCode.not_found, detail="Document not found")
     # run_in_threadpool: read_bytes is a synchronous, blocking disk read
     # — same reasoning as save_verification_document above.
     return await run_in_threadpool(target.read_bytes)

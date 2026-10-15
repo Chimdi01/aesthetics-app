@@ -86,6 +86,8 @@ async def app_error_handler(request: Request, exc: AppError) -> JSONResponse:
     }
     if exc.params is not None:
         content["params"] = exc.params
+    if exc.fields is not None:
+        content["fields"] = exc.fields
     return JSONResponse(status_code=exc.status_code, content=content, headers=exc.headers)
 
 

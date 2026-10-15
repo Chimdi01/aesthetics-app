@@ -4,7 +4,14 @@ Pure logic in app/errors.py — no DB, no HTTP.
 import pytest
 from pydantic import BaseModel, ValidationError
 
-from app.errors import AppError, ErrorCode, build_field_errors, fallback_error_code, field_error_code
+from app.errors import (
+    AppError,
+    ErrorCode,
+    build_field_errors,
+    fallback_error_code,
+    field_error,
+    field_error_code,
+)
 
 
 def test_fallback_error_code_known_statuses():
@@ -55,6 +62,8 @@ def test_app_error_carries_code_detail_and_params():
         ("timezone_aware", "invalid_type"),
         ("enum", "invalid_choice"),
         ("extra_forbidden", "unexpected_field"),
+        ("must_be_future", "must_be_future"),
+        ("not_offered", "not_offered"),
     ],
 )
 def test_field_error_code_frozen_mapping(pydantic_type, expected_code):
@@ -108,3 +117,23 @@ def test_build_field_errors_uses_the_single_segment_directly():
             "message": "Input should be a valid integer, unable to parse string as an integer",
         }
     ]
+
+
+def test_field_error_uses_a_registered_code():
+    assert field_error("scheduled_at", "must_be_future", "msg") == {
+        "field": "scheduled_at",
+        "code": "must_be_future",
+        "message": "msg",
+    }
+
+
+def test_field_error_degrades_an_unregistered_code_to_generic():
+    # The freeze applies to app-raised codes too: a code nobody added to
+    # the mapping can't reach a client as-is.
+    assert field_error("x", "some_unreviewed_code", "msg")["code"] == "invalid"
+
+
+def test_app_error_carries_fields():
+    fields = [field_error("category", "not_offered", "msg")]
+    err = AppError(status_code=422, error_code=ErrorCode.validation_failed, detail="msg", fields=fields)
+    assert err.fields == fields

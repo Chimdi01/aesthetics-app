@@ -11,11 +11,11 @@ import uuid
 from pathlib import Path
 
 import pytest
-from fastapi import HTTPException
 from PIL import Image
 from starlette.datastructures import Headers, UploadFile
 
 from app.config import settings
+from app.errors import AppError, ErrorCode
 from app.models.portfolio_media import MediaType
 from app.storage import _MAX_IMAGE_DIMENSION, delete_file, save_upload
 
@@ -54,18 +54,23 @@ async def test_save_upload_accepts_allowed_image_type():
 
 
 async def test_save_upload_rejects_disallowed_content_type():
-    with pytest.raises(HTTPException) as exc_info:
+    with pytest.raises(AppError) as exc_info:
         await save_upload(_upload_file(b"whatever", "application/pdf"), uuid.uuid4())
-    assert exc_info.value.status_code == 400
+    assert exc_info.value.status_code == 422
+    assert exc_info.value.error_code == ErrorCode.validation_failed
+    # The client-supplied content type must not be reflected back.
+    assert "application/pdf" not in exc_info.value.detail
+    assert "image/jpeg" in exc_info.value.params["allowed_types"]
 
 
 async def test_save_upload_rejects_content_claiming_to_be_an_image_but_isnt():
     # Content-Type says image/jpeg, but the body isn't a decodable image —
     # a spoofed/garbled upload. Must be rejected, not written to disk as
     # a "photo" nothing can actually open.
-    with pytest.raises(HTTPException) as exc_info:
+    with pytest.raises(AppError) as exc_info:
         await save_upload(_upload_file(b"this is not an image", "image/jpeg"), uuid.uuid4())
-    assert exc_info.value.status_code == 400
+    assert exc_info.value.status_code == 422
+    assert exc_info.value.error_code == ErrorCode.validation_failed
 
 
 async def test_save_upload_compresses_oversized_images_down_to_max_dimension():
@@ -108,15 +113,17 @@ async def test_save_upload_ignores_client_supplied_filename_for_path_traversal()
 
 async def test_save_upload_rejects_file_over_max_size(monkeypatch):
     monkeypatch.setattr(settings, "max_upload_size_bytes", 10)
-    with pytest.raises(HTTPException) as exc_info:
+    with pytest.raises(AppError) as exc_info:
         await save_upload(_upload_file(b"x" * 100, "image/jpeg"), uuid.uuid4())
     assert exc_info.value.status_code == 413
+    assert exc_info.value.error_code == ErrorCode.payload_too_large
 
 
 async def test_save_upload_rejects_empty_file():
-    with pytest.raises(HTTPException) as exc_info:
+    with pytest.raises(AppError) as exc_info:
         await save_upload(_upload_file(b"", "image/jpeg"), uuid.uuid4())
-    assert exc_info.value.status_code == 400
+    assert exc_info.value.status_code == 422
+    assert exc_info.value.error_code == ErrorCode.validation_failed
 
 
 async def test_delete_file_removes_saved_file():

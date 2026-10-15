@@ -21,20 +21,6 @@ APP_ROOT = Path(__file__).resolve().parents[2] / "app"
 # listed here no longer needs to be, or a file not listed here does),
 # the test below fails either way, so it can't silently go stale.
 _NOT_YET_MIGRATED = {
-    # Batch 2: bookings, reviews and messages.
-    "booking_access.py",
-    "routers/bookings.py",
-    "routers/reviews.py",
-    "routers/messages.py",
-    # Batch 3: admin, users, verification and storage.
-    "routers/admin.py",
-    "routers/users.py",
-    "routers/verification.py",
-    "routers/provider_availability.py",  # shares a "provider profile not found" pattern with the above
-    "routers/portfolio.py",
-    "routers/providers.py",
-    "storage.py",
-    "verification_storage.py",
     # Batch 4: the rest.
     "routers/reports.py",
     # Deliberately permanent, not a migration gap: /health/ready isn't

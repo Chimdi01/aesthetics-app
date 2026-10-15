@@ -47,11 +47,12 @@ import logging
 import uuid
 from pathlib import Path
 
-from fastapi import HTTPException, UploadFile
+from fastapi import UploadFile
 from PIL import Image, UnidentifiedImageError
 from starlette.concurrency import run_in_threadpool
 
 from app.config import settings
+from app.errors import AppError, ErrorCode
 from app.models.portfolio_media import MediaType
 
 logger = logging.getLogger(__name__)
@@ -105,7 +106,11 @@ def _compress_image(raw: bytes) -> bytes:
         # from None: a corrupt/spoofed upload's decode error isn't
         # actionable beyond "it's not a valid image", which the message
         # already says.
-        raise HTTPException(status_code=400, detail="Uploaded file is not a valid image") from None
+        raise AppError(
+            status_code=422,
+            error_code=ErrorCode.validation_failed,
+            detail="Uploaded file is not a valid image",
+        ) from None
 
 
 async def save_upload(file: UploadFile, provider_profile_id: uuid.UUID) -> tuple[str, MediaType]:
@@ -118,9 +123,14 @@ async def save_upload(file: UploadFile, provider_profile_id: uuid.UUID) -> tuple
         logger.warning(
             "Rejected upload for provider %s: disallowed content-type '%s'", provider_profile_id, file.content_type
         )
-        raise HTTPException(
-            status_code=400,
-            detail=f"Unsupported file type '{file.content_type}'. Allowed: {sorted(ALLOWED_CONTENT_TYPES)}",
+        # The client-supplied content type is deliberately NOT echoed back
+        # in detail (no response field may reflect raw user input).
+        allowed = sorted(ALLOWED_CONTENT_TYPES)
+        raise AppError(
+            status_code=422,
+            error_code=ErrorCode.validation_failed,
+            detail=f"Unsupported file type. Allowed: {allowed}",
+            params={"allowed_types": allowed},
         )
     media_type, extension = ALLOWED_CONTENT_TYPES[file.content_type]
 
@@ -140,12 +150,16 @@ async def save_upload(file: UploadFile, provider_profile_id: uuid.UUID) -> tuple
                 provider_profile_id,
                 settings.max_upload_size_bytes,
             )
-            raise HTTPException(status_code=413, detail="File exceeds maximum upload size")
+            raise AppError(
+                status_code=413,
+                error_code=ErrorCode.payload_too_large,
+                detail="File exceeds maximum upload size",
+            )
         chunks.append(chunk)
 
     if bytes_read == 0:
         logger.warning("Rejected upload for provider %s: empty file", provider_profile_id)
-        raise HTTPException(status_code=400, detail="Uploaded file is empty")
+        raise AppError(status_code=422, error_code=ErrorCode.validation_failed, detail="Uploaded file is empty")
 
     raw = b"".join(chunks)
     if media_type == MediaType.photo:
